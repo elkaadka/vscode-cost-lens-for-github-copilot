@@ -1,0 +1,27 @@
+{
+  // TypeScript + Node 20 toolchain (matches @types/node ^20 in package.json).
+  // This provides node/npm/esbuild in the container so the host needs no Node.js.
+  "name": "copilot-control-plane",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+
+  "customizations": {
+    "vscode": {
+      // Copilot + Copilot Chat must run in THIS (container) extension host so that
+      // vscode.lm.selectChatModels({ vendor: 'copilot' }) returns models and the
+      // Cost Health badge can compute a real score. Without them it shows the
+      // graceful "no Copilot model" state.
+      "extensions": [
+        "GitHub.copilot",
+        "GitHub.copilot-chat"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  // Install our build dependencies (esbuild, typescript, type defs) once on create.
+  "postCreateCommand": "npm install",
+
+  "remoteUser": "node"
+}

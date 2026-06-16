@@ -1,0 +1,140 @@
+{
+  "name": "copilot-control-plane",
+  "displayName": "Cost Lens for GitHub Copilot",
+  "description": "See your real GitHub Copilot spend: AI credits, cost and tokens, measured from Copilot's own logs.",
+  "version": "0.1.1",
+  "publisher": "AdilElKanabi",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/elkaadka/vscode-cost-lens-for-github-copilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/elkaadka/vscode-cost-lens-for-github-copilot/issues"
+  },
+  "homepage": "https://github.com/elkaadka/vscode-cost-lens-for-github-copilot#readme",
+  "engines": {
+    "vscode": "^1.120.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "copilotControlPlane",
+          "title": "Copilot Cost Lens",
+          "icon": "media/health.png"
+        }
+      ]
+    },
+    "views": {
+      "copilotControlPlane": [
+        {
+          "id": "copilotControlPlane.dashboard",
+          "name": "Copilot Cost Lens",
+          "type": "webview",
+          "icon": "media/health.png"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "copilotControlPlane.showDetails",
+        "title": "Copilot Cost Lens: Show Cost Details"
+      },
+      {
+        "command": "copilotControlPlane.refresh",
+        "title": "Copilot Cost Lens: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "copilotControlPlane.resetSession",
+        "title": "Copilot Cost Lens: Reset Session Meter"
+      },
+      {
+        "command": "copilotControlPlane.enableLogging",
+        "title": "Copilot Cost Lens: Enable Copilot Token Logging"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "copilotControlPlane.refresh",
+          "when": "view == copilotControlPlane.dashboard",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Copilot Cost Lens",
+      "properties": {
+        "copilotCostLens.economyModels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "gpt-5-mini",
+            "gpt-4o-mini",
+            "o4-mini"
+          ],
+          "description": "Model ids/families treated as low-cost. Used to flag when a pricier model is used for light work."
+        },
+        "copilotCostLens.reasoningNudgeMinutes": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "description": "Minutes of continuous high/xhigh reasoning before the Cost Explorer tip escalates from a neutral note to an amber nudge."
+        },
+        "copilotCostLens.reasoningUrgentMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "description": "Minutes of continuous high/xhigh reasoning before the Cost Explorer tip escalates to a high-priority (red) warning."
+        },
+        "copilotCostLens.modelTipMinCredits": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "description": "Minimum AI credits spent on a price tier (top or mid) before the 'pricey model on light work' tip appears. Keeps trivial usage quiet (1 credit = $0.01)."
+        },
+        "copilotCostLens.lightOutputTokens": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "Average output (reply) tokens per call below which work is considered 'lightweight'. The pricey-model tip fires only when a top/mid-tier model's average reply is under this size."
+        },
+        "copilotCostLens.redactPromptText": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide prompt and reply text in the Priciest-prompts leaderboard and its detail view. When on, prompts are labelled 'Prompt N' and the detail hides the prompt/reply text, while costs and token counts stay visible."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production",
+    "package:vsix": "vsce package --no-dependencies",
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.120.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "gpt-tokenizer": "^3.4.0"
+  }
+}
