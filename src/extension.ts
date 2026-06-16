@@ -526,7 +526,7 @@ function buildTips(t: UsageTotals, rate: ModelRate): PanelTip[] {
 
   // Pricey model on lightweight work. Tier each used model by its output price (from models.json):
   // top (≥2500 credits/1M, Opus/GPT-5.5) and mid (≥1000). Fire when spend on a tier crosses a floor
-  // AND the average reply on that tier is small — the honest signal of "expensive model for quick
+  // AND the average reply on that tier is small the honest signal of "expensive model for quick
   // answers". A few big-output calls (real deep work) won't trip it. Both gates are configurable.
   const prices = t.modelPrices;
   if (prices && t.modelUsage.length > 0) {
@@ -613,7 +613,7 @@ function buildTips(t: UsageTotals, rate: ModelRate): PanelTip[] {
       push(best.saving, {
         tone: 'info',
         title: `Switch to a lower‑tier model to save up to ${best.pct}%`,
-        detail: `Your ${currentLabel} usage cost ≈${fmtUSD(billed)}. Each model below shows what the same work would cost there instead — pick one for routine turns to spend less.`,
+        detail: `Your ${currentLabel} usage cost ≈${fmtUSD(billed)}. Each model below shows what the same work would cost there instead pick one for routine turns to spend less.`,
         metric: `≈${fmtUSD(best.projected)} on ${prettyModel(best.name)} · ${best.pct}% less`,
         options: alternatives.map((a) => ({
           label: prettyModel(a.name),

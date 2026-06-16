@@ -280,6 +280,15 @@ function DASHBOARD_HTML(csp: string, nonce: string): string {
   .alert .a-m { font-size: 17px; font-weight: 800; color: var(--warn); margin-top: 6px; }
   .alert.crit .a-m { color: var(--bad); }
 
+  /* Tips collapsed into a single "Ways to save" drill at the top of the Session tab. */
+  .drill.tips-span { grid-column: 1 / -1; }
+  .drill.tip { background: color-mix(in srgb, var(--warn) 9%, var(--card)); border-color: color-mix(in srgb, var(--warn) 30%, var(--line)); }
+  .drill.tip .drill-ico { background: color-mix(in srgb, var(--warn) 18%, transparent); }
+  .alert.tip-item { background: var(--card); border: 1px solid var(--line); border-radius: 11px; padding: 12px 13px; }
+  .alert.tip-item + .tip-item { margin-top: 10px; }
+  .alert.tip-item.crit { border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); }
+  .tip-item .a-t { margin-top: 0; }
+
   .segbar { display: flex; height: 9px; border-radius: 5px; overflow: hidden; background: var(--line); margin-top: 10px; }
   .segbar > span { height: 100%; }
 
@@ -608,6 +617,45 @@ const DASHBOARD_JS = String.raw`
     return cell;
   }
 
+  // Tips collapsed into one "Ways to save" drill at the top of the Session tab. Collapsed by
+  // default; the header carries the tip count and the best percentage saving so it still sells.
+  function tipCard(tip) {
+    var c = el('div', 'tip-item alert' + (tip.tone === 'bad' ? ' crit' : ''));
+    c.appendChild(el('div', 'a-t', '\u26A0 ' + tip.title));
+    c.appendChild(el('div', 'a-d', tip.detail));
+    if (tip.options && tip.options.length) {
+      var opts = el('div', 'a-opts');
+      tip.options.forEach(function (o) {
+        var row = el('div', 'a-opt');
+        row.appendChild(el('span', 'a-opt-l', o.label));
+        var right = el('span', 'a-opt-r');
+        right.appendChild(el('span', 'a-opt-v', o.value));
+        if (o.badge) right.appendChild(el('span', 'a-opt-b', o.badge));
+        row.appendChild(right);
+        opts.appendChild(row);
+      });
+      c.appendChild(opts);
+    }
+    if (tip.metric) c.appendChild(el('div', 'a-m', tip.metric));
+    return c;
+  }
+  function tipsDrill(tips) {
+    var open = drillOpen.hasOwnProperty('Ways to save') ? drillOpen['Ways to save'] : false;
+    var d = el('div', 'drill tip tips-span' + (open ? ' open' : ''));
+    var head = el('div', 'drill-head');
+    head.appendChild(el('div', 'drill-ico', '\uD83D\uDCA1'));
+    var body = el('div', 'drill-body');
+    body.appendChild(el('div', 'drill-t', 'Ways to save'));
+    body.appendChild(el('div', 'drill-d', tips.length + ' recommendation' + (tips.length === 1 ? '' : 's') + ' to optimize cost'));
+    head.appendChild(body);
+    head.appendChild(el('div', 'drill-chev', '\u203A'));
+    head.addEventListener('click', function () { d.classList.toggle('open'); drillOpen['Ways to save'] = d.classList.contains('open'); });
+    var panel = el('div', 'drill-panel');
+    tips.forEach(function (tip) { panel.appendChild(tipCard(tip)); });
+    d.appendChild(head); d.appendChild(panel);
+    return d;
+  }
+
   // ----- WORKSPACE -----
   function renderWorkspace(p) {
     var page = document.getElementById('page-w');
@@ -616,8 +664,8 @@ const DASHBOARD_JS = String.raw`
     var m = p.measured, grid = el('div', 'grid');
     var sessWord = m.sessions === 1 ? 'session' : 'sessions';
     grid.appendChild(heroCell('Workspace spend', m.costFmt, m.creditsFmt + ' credits \u00B7 ' + m.totalTokensFmt + ' tokens \u00B7 ' + m.sessions + ' ' + sessWord));
-    grid.appendChild(donutCell('Where your tokens go', m.tokenMix, m.totalTokensFmt, 'tokens'));
-    grid.appendChild(donutCell('Where your cost goes', m.costMix, m.costFmt, ''));
+    grid.appendChild(donutCell('Token distribution', m.tokenMix, m.totalTokensFmt, ''));
+    grid.appendChild(donutCell('Cost distribution', m.costMix, m.costFmt, ''));
     var hit = p.cache && p.cache.sessions && p.cache.sessions.length ? p.cache.sessions[0].hitRateFmt : '\u2014';
     grid.appendChild(statCell('Cache hit rate', hit, 'exact, from logs', 'var(--ok)'));
     var rseg = segOf(m.costMix, 'Reasoning');
@@ -645,30 +693,10 @@ const DASHBOARD_JS = String.raw`
     var title = p.sessionTitle || (p.cache && p.cache.sessions && p.cache.sessions[0] ? p.cache.sessions[0].title : 'Active session');
     grid.appendChild(heroCell('Active session', m.costFmt, '\u201C' + title + '\u201D \u00B7 ' + m.creditsFmt + ' credits \u00B7 ' + m.totalTokensFmt + ' tokens'));
 
-    (m.tips || []).forEach(function (tip) {
-      var cell = el('div', 'cell wide alert' + (tip.tone === 'bad' ? ' crit' : ''));
-      cell.appendChild(el('div', 'label', 'Action'));
-      cell.appendChild(el('div', 'a-t', '\u26A0 ' + tip.title));
-      cell.appendChild(el('div', 'a-d', tip.detail));
-      if (tip.options && tip.options.length) {
-        var opts = el('div', 'a-opts');
-        tip.options.forEach(function (o) {
-          var row = el('div', 'a-opt');
-          row.appendChild(el('span', 'a-opt-l', o.label));
-          var right = el('span', 'a-opt-r');
-          right.appendChild(el('span', 'a-opt-v', o.value));
-          if (o.badge) right.appendChild(el('span', 'a-opt-b', o.badge));
-          row.appendChild(right);
-          opts.appendChild(row);
-        });
-        cell.appendChild(opts);
-      }
-      cell.appendChild(el('div', 'a-m', tip.metric));
-      grid.appendChild(cell);
-    });
+    if (m.tips && m.tips.length) grid.appendChild(tipsDrill(m.tips));
 
-    grid.appendChild(donutCell('Where your tokens go', m.tokenMix, m.totalTokensFmt, 'tokens'));
-    grid.appendChild(donutCell('Where your cost goes', m.costMix, m.costFmt, ''));
+    grid.appendChild(donutCell('Token distribution', m.tokenMix, m.totalTokensFmt, ''));
+    grid.appendChild(donutCell('Cost distribution', m.costMix, m.costFmt, ''));
     var hit = p.cache && p.cache.sessions && p.cache.sessions.length ? p.cache.sessions[0].hitRateFmt : '\u2014';
     grid.appendChild(statCell('Cache hit rate', hit, 'exact, this session', 'var(--ok)'));
     var rseg = segOf(m.costMix, 'Reasoning');

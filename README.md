@@ -17,7 +17,7 @@ credit spend across every chat session, then points out concrete, data‑backed 
 
 ## Why
 
-Copilot Cost Lens gives developers a clear, local view of how their own credits and tokens are
+Cost Lens for GitHub Copilot gives developers a clear, local view of how their own credits and tokens are
 spent, per request, per session, per project. The goal is visibility at the developer level: see
 which prompts, models, and habits use the most, and adjust how you work to get more out of your
 budget.
@@ -55,6 +55,12 @@ collapsible drill‑downs:
 - **Tools**: which available tools were actually used vs. sitting idle in every request's schema.
 - **FAQ**: exactly how each number is derived.
 
+<p align="center">
+  <img src="media/screenshots/workspace.png" alt="Workspace tab: headline spend, token and cost donuts, cache, reasoning and top models" width="320" />
+  &nbsp;
+  <img src="media/screenshots/global.png" alt="Global tab: spend across every workspace with a per-project breakdown" width="320" />
+</p>
+
 ### Priciest‑prompts leaderboard
 In agent mode, one thing you type fans out into many billable model calls (each tool‑loop iteration
 is its own call). A "prompt" here means a user message **plus every call it triggered**: the honest
@@ -73,6 +79,10 @@ Click any prompt for a detail view with everything the logs hold for that turn:
 > is derivable (billed output minus the visible reply). Prompt and reply text can be hidden with
 > `copilotCostLens.redactPromptText`.
 
+<p align="center">
+  <img src="media/screenshots/expensive_prompts.png" alt="Priciest prompts ranked by real billed credits" width="320" />
+</p>
+
 ### Cost‑saving tips
 The Session tab surfaces ranked, data‑backed tips when there's waste to trim (and a calm "no actions"
 state when there isn't):
@@ -84,6 +94,10 @@ state when there isn't):
 - **Pricey model on light work**: a top/mid price‑tier model whose replies are consistently small.
 - **Switch to a cheaper model**: an estimate of what you'd save by moving to the cheapest model one
   tier down, anchored to your real billed spend.
+
+<p align="center">
+  <img src="media/screenshots/session.png" alt="Session tab with ranked cost-saving tips including a cheaper-model suggestion" width="320" />
+</p>
 
 ## How it measures
 
@@ -140,7 +154,7 @@ npm run package:vsix
 
 ## Getting started
 
-1. Open the **Copilot Cost Lens** view from the activity bar.
+1. Open the **Cost Lens for GitHub Copilot** view from the activity bar.
 2. Click **Enable token logging** (or set `github.copilot.chat.agentDebugLog.fileLogging.enabled`)
    and reload the window.
 3. Send a Copilot chat message: the dashboard and status‑bar badge populate with measured cost.
@@ -149,10 +163,10 @@ npm run package:vsix
 
 | Command | Purpose |
 | --- | --- |
-| **Copilot Cost Lens: Show Cost Details** | Focus the dashboard |
-| **Copilot Cost Lens: Refresh** | Re‑scan logs and recompute |
-| **Copilot Cost Lens: Enable Copilot Token Logging** | Turn on the logs needed to measure cost |
-| **Copilot Cost Lens: Reset Session Meter** | Clear the current session's running meter |
+| **Cost Lens for GitHub Copilot: Show Cost Details** | Focus the dashboard |
+| **Cost Lens for GitHub Copilot: Refresh** | Re‑scan logs and recompute |
+| **Cost Lens for GitHub Copilot: Enable Copilot Token Logging** | Turn on the logs needed to measure cost |
+| **Cost Lens for GitHub Copilot: Reset Session Meter** | Clear the current session's running meter |
 
 ## ⚙️ Settings
 

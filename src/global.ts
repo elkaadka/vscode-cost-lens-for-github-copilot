@@ -9,7 +9,7 @@ import { parseSpanLine } from './usagelog';
  * does no polling: it scans only when the view is opened or Refresh is clicked, because walking
  * every workspace's (potentially large) logs is too heavy to run on a timer.
  *
- * Totals are computed by streaming each `main.jsonl` once and summing — no span map, so the
+ * Totals are computed by streaming each `main.jsonl` once and summing no span map, so the
  * per-session `spanId` collision that would affect a deduped cross-workspace aggregate simply
  * can't happen here (nothing is keyed; we only add up credits and tokens).
  */

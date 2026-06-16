@@ -67,7 +67,7 @@ function buildView(t: GlobalTotals): GlobalView {
 
 /**
  * "Cost Explorer · Global" webview: a machine-wide credit + token total with a per-workspace
- * breakdown. On-demand only — it scans on open and on the Refresh button, never on a timer.
+ * breakdown. On-demand only it scans on open and on the Refresh button, never on a timer.
  */
 export class GlobalViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'copilotControlPlane.globalView';

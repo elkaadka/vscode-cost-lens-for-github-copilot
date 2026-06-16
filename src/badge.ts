@@ -16,7 +16,7 @@ export class Badge implements vscode.Disposable {
   constructor(private readonly showDetailsCmd: string) {
     this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     this.item.command = showDetailsCmd;
-    this.item.name = 'Copilot Cost Lens';
+    this.item.name = 'Cost Lens for GitHub Copilot';
     this.setUnavailable('Computing…');
     this.item.show();
   }
@@ -25,7 +25,7 @@ export class Badge implements vscode.Disposable {
     this.item.text = '$(circle-slash) Copilot Usage';
     this.item.backgroundColor = undefined;
     const md = new vscode.MarkdownString(undefined, true);
-    md.appendMarkdown(`**Copilot Cost Lens**\n\n$(info) ${reason}`);
+    md.appendMarkdown(`**Cost Lens for GitHub Copilot**\n\n$(info) ${reason}`);
     this.item.tooltip = md;
   }
 
@@ -42,7 +42,7 @@ export class Badge implements vscode.Disposable {
     md.isTrusted = true;
     md.supportThemeIcons = true;
 
-    md.appendMarkdown(`**Copilot Cost Lens**\n\n`);
+    md.appendMarkdown(`**Cost Lens for GitHub Copilot**\n\n`);
     md.appendMarkdown('---\n\n');
     md.appendMarkdown(
       `$(database) ${view.totalTokensFmt} tokens across ${view.sessions} session${view.sessions === 1 ? '' : 's'} · ${view.costFmt} ${view.costNote}\n\n` +

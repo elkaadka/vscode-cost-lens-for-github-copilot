@@ -1,5 +1,5 @@
 {
-  "name": "copilot-control-plane",
+  "name": "cost-lens-for-github-copilot",
   "displayName": "Cost Lens for GitHub Copilot",
   "description": "See your real GitHub Copilot spend: AI credits, cost and tokens, measured from Copilot's own logs.",
   "version": "0.1.1",
@@ -29,8 +29,8 @@
       "activitybar": [
         {
           "id": "copilotControlPlane",
-          "title": "Copilot Cost Lens",
-          "icon": "media/health.png"
+          "title": "Cost Lens for GitHub Copilot",
+          "icon": "$(copilot-in-progress)"
         }
       ]
     },
@@ -38,29 +38,33 @@
       "copilotControlPlane": [
         {
           "id": "copilotControlPlane.dashboard",
-          "name": "Copilot Cost Lens",
+          "name": "Cost Lens for GitHub Copilot",
           "type": "webview",
-          "icon": "media/health.png"
+          "icon": "$(copilot-in-progress)"
         }
       ]
     },
     "commands": [
       {
         "command": "copilotControlPlane.showDetails",
-        "title": "Copilot Cost Lens: Show Cost Details"
+        "category": "Cost Lens for GitHub Copilot",
+        "title": "Show Cost Details"
       },
       {
         "command": "copilotControlPlane.refresh",
-        "title": "Copilot Cost Lens: Refresh",
+        "category": "Cost Lens for GitHub Copilot",
+        "title": "Refresh",
         "icon": "$(refresh)"
       },
       {
         "command": "copilotControlPlane.resetSession",
-        "title": "Copilot Cost Lens: Reset Session Meter"
+        "category": "Cost Lens for GitHub Copilot",
+        "title": "Reset Session Meter"
       },
       {
         "command": "copilotControlPlane.enableLogging",
-        "title": "Copilot Cost Lens: Enable Copilot Token Logging"
+        "category": "Cost Lens for GitHub Copilot",
+        "title": "Enable Copilot Token Logging"
       }
     ],
     "menus": {
@@ -73,7 +77,7 @@
       ]
     },
     "configuration": {
-      "title": "Copilot Cost Lens",
+      "title": "Cost Lens for GitHub Copilot",
       "properties": {
         "copilotCostLens.economyModels": {
           "type": "array",
@@ -124,7 +128,7 @@
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "package": "node esbuild.js --production",
-    "package:vsix": "vsce package --no-dependencies",
+    "package:vsix": "vsce package --no-dependencies --readme-path MARKETPLACE.md",
     "check-types": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
