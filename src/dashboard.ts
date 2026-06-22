@@ -262,6 +262,9 @@ function DASHBOARD_HTML(csp: string, nonce: string): string {
   .gauge { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 10px; }
   .gauge > i { display: block; height: 100%; background: var(--ok); }
 
+  /* Forecast cell caption. */
+  .allow-note { font-size: 10.5px; margin-top: 8px; color: var(--fg-dim); }
+
   .alert { background: color-mix(in srgb, var(--warn) 12%, var(--card)); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
   .alert.crit { background: color-mix(in srgb, var(--bad) 13%, var(--card)); border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); }
   .alert .a-t { font-weight: 700; font-size: 12.5px; margin-top: 6px; }
@@ -357,6 +360,32 @@ function DASHBOARD_HTML(csp: string, nonce: string): string {
   .od-call b { font-size: 12px; flex: 0 0 auto; }
   .od-note { font-size: 10.5px; color: var(--fg-dim); line-height: 1.5; margin-top: 14px; font-style: italic; }
 
+  .cell.hero.clickable { cursor: pointer; }
+  .cell.hero.clickable:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .hero .hero-cta { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; font-size: 10.5px; font-weight: 600; color: var(--accent); }
+  .od-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 2px 0 14px; }
+  .od-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .od-card .k { font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--fg-dim); font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .od-card .k .sw { width: 9px; height: 9px; border-radius: 3px; }
+  .od-card .v { font-size: 24px; font-weight: 800; letter-spacing: -.02em; margin-top: 3px; }
+  .od-card .c { font-size: 10.5px; color: var(--fg-dim); margin-top: 3px; }
+  .spend-chart { width: 100%; height: auto; display: block; }
+  .spend-chart .grid-line { stroke: var(--line); stroke-width: 1; }
+  .spend-chart .axis-label { fill: var(--fg-dim); font-size: 10px; }
+  .spend-tip { position: fixed; z-index: 50; pointer-events: none; max-width: 240px;
+    background: var(--vscode-editorHoverWidget-background, #252526);
+    color: var(--vscode-editorHoverWidget-foreground, #cccccc);
+    border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+    border-radius: 4px; padding: 5px 8px; font-size: 11px; line-height: 1.45;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4); white-space: nowrap; opacity: 0; transition: opacity .08s; }
+  .spend-tip.show { opacity: 1; }
+  .spend-tip .tt { font-weight: 600; }
+  .spend-tip .td { color: var(--fg-dim); }
+  .spend-legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; font-size: 11px; color: var(--fg-dim); }
+  .spend-legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .spend-legend .sw { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+  .spend-legend .sw.dash { background: repeating-linear-gradient(90deg, var(--accent) 0 3px, transparent 3px 6px); }
+
   .state { text-align: center; padding: 40px 18px; }
   .state .big { font-size: 30px; margin-bottom: 12px; }
   .state .t { font-weight: 700; font-size: 15px; margin-bottom: 8px; }
@@ -393,7 +422,7 @@ function DASHBOARD_HTML(csp: string, nonce: string): string {
   <div id="overlay" class="overlay">
     <div class="overlay-card">
       <div class="overlay-bar">
-        <div class="overlay-title">Prompt detail</div>
+        <div id="overlay-title" class="overlay-title">Prompt detail</div>
         <button id="overlay-close" class="btn ghost ov-x">\u2715 Close</button>
       </div>
       <div id="overlay-body" class="overlay-body"></div>
@@ -432,7 +461,7 @@ const DASHBOARD_JS = String.raw`
       var row = el('span');
       var sw = el('span', 'sw'); sw.style.background = s.color;
       var name = el('span', null, s.label);
-      var v = el('span', 'v', s.valueFmt);
+      var v = el('span', 'v', s.valueFmt + (s.note ? ' \u00B7 ' + s.note : ''));
       row.appendChild(sw); row.appendChild(name); row.appendChild(v); l.appendChild(row);
     });
     return l;
@@ -488,12 +517,13 @@ const DASHBOARD_JS = String.raw`
   }
 
   function openPromptDetail(id) {
+    document.getElementById('overlay-title').textContent = 'Prompt detail';
     document.getElementById('overlay').classList.add('show');
     var b = document.getElementById('overlay-body'); b.textContent = '';
     b.appendChild(el('div', 'empty', 'Loading detail\u2026'));
     vscode.postMessage({ type: 'promptDetail', id: id });
   }
-  function closeOverlay() { document.getElementById('overlay').classList.remove('show'); }
+  function closeOverlay() { hideSpendTip(); document.getElementById('overlay').classList.remove('show'); }
   function renderPromptDetail(d) {
     var b = document.getElementById('overlay-body'); b.textContent = '';
     if (!d) { b.appendChild(el('div', 'empty', 'Detail unavailable for this prompt.')); return; }
@@ -601,12 +631,21 @@ const DASHBOARD_JS = String.raw`
     return row;
   }
 
-  function heroCell(label, big, sub) {
+  function heroCell(label, big, sub, onClick) {
     var cell = el('div', 'cell wide hero');
     cell.appendChild(el('div', 'glow'));
     cell.appendChild(el('div', 'label', label));
     cell.appendChild(el('div', 'big', big));
     cell.appendChild(el('div', 'sub', sub));
+    if (onClick) {
+      cell.classList.add('clickable');
+      cell.title = 'View spend over time';
+      var cta = el('div', 'hero-cta');
+      cta.appendChild(document.createTextNode('\uD83D\uDCC8 View spend over time'));
+      cta.appendChild(el('span', 'drill-chev', '\u203A'));
+      cell.appendChild(cta);
+      cell.addEventListener('click', onClick);
+    }
     return cell;
   }
   function statCell(label, num, cap, color) {
@@ -663,9 +702,12 @@ const DASHBOARD_JS = String.raw`
     if (!p) { page.appendChild(emptyEl('No workspace usage recorded yet. Send a Copilot message, then Refresh.')); return; }
     var m = p.measured, grid = el('div', 'grid');
     var sessWord = m.sessions === 1 ? 'session' : 'sessions';
-    grid.appendChild(heroCell('Workspace spend', m.costFmt, m.creditsFmt + ' credits \u00B7 ' + m.totalTokensFmt + ' tokens \u00B7 ' + m.sessions + ' ' + sessWord));
+    var onSpend = m.spendChart && m.spendChart.hasData ? function () { openSpendChart(m); } : null;
+    grid.appendChild(heroCell('Workspace spend', m.costFmt, m.creditsFmt + ' credits \u00B7 ' + m.totalTokensFmt + ' tokens \u00B7 ' + m.sessions + ' ' + sessWord, onSpend));
+    if (m.budget && m.budget.hasForecast) grid.appendChild(forecastCell(m.budget));
     grid.appendChild(donutCell('Token distribution', m.tokenMix, m.totalTokensFmt, ''));
     grid.appendChild(donutCell('Cost distribution', m.costMix, m.costFmt, ''));
+    if (m.costByModel && m.costByModel.length) grid.appendChild(donutCell('Cost by model', m.costByModel, m.costFmt, ''));
     var hit = p.cache && p.cache.sessions && p.cache.sessions.length ? p.cache.sessions[0].hitRateFmt : '\u2014';
     grid.appendChild(statCell('Cache hit rate', hit, 'exact, from logs', 'var(--ok)'));
     var rseg = segOf(m.costMix, 'Reasoning');
@@ -691,7 +733,8 @@ const DASHBOARD_JS = String.raw`
     if (!p) { page.appendChild(emptyEl('No active session yet. Send a Copilot message in this chat, then Refresh.')); return; }
     var m = p.measured, grid = el('div', 'grid');
     var title = p.sessionTitle || (p.cache && p.cache.sessions && p.cache.sessions[0] ? p.cache.sessions[0].title : 'Active session');
-    grid.appendChild(heroCell('Active session', m.costFmt, '\u201C' + title + '\u201D \u00B7 ' + m.creditsFmt + ' credits \u00B7 ' + m.totalTokensFmt + ' tokens'));
+    var onSpend = m.spendChart && m.spendChart.hasData ? function () { openSpendChart(m); } : null;
+    grid.appendChild(heroCell('Active session', m.costFmt, '\u201C' + title + '\u201D \u00B7 ' + m.creditsFmt + ' credits \u00B7 ' + m.totalTokensFmt + ' tokens', onSpend));
 
     if (m.tips && m.tips.length) grid.appendChild(tipsDrill(m.tips));
 
@@ -702,6 +745,7 @@ const DASHBOARD_JS = String.raw`
     var rseg = segOf(m.costMix, 'Reasoning');
     grid.appendChild(statCell('Reasoning', rseg ? rseg.valueFmt : '\u2014', rseg ? rseg.pctFmt + ' of spend' : '', 'var(--purple)'));
     if (m.avgPerPromptFmt && m.avgPerPromptFmt !== '-') grid.appendChild(statCell('Avg per prompt', m.avgPerPromptFmt, m.avgPerPromptCap, 'var(--accent)'));
+    if (m.costByModel && m.costByModel.length > 1) grid.appendChild(donutCell('Cost by model', m.costByModel, m.costFmt, ''));
     page.appendChild(grid);
 
     var drills = el('div', 'drills');
@@ -778,6 +822,143 @@ const DASHBOARD_JS = String.raw`
     });
     cell.appendChild(mini);
     return cell;
+  }
+  // Forecast: projected month-end spend at the current pace.
+  function forecastCell(b) {
+    var cell = el('div', 'cell stat');
+    cell.appendChild(el('div', 'label', 'Forecast \u00B7 ' + b.monthLabel));
+    cell.appendChild(el('div', 'num', b.projectedSpendFmt));
+    cell.appendChild(el('div', 'cap', b.projectedNote));
+    if (b.paceNote) cell.appendChild(el('div', 'allow-note', b.paceNote));
+    return cell;
+  }
+
+  // ----- SPEND-OVER-TIME CHART (opened from the Spend card) -----
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function svg(tag, attrs) {
+    var e = document.createElementNS(SVGNS, tag);
+    if (attrs) { for (var k in attrs) { if (attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]); } }
+    return e;
+  }
+  // Azure-style accumulated-cost area chart: solid filled area for actual spend (day 1 -> today),
+  // a lighter filled area with a dashed line for the forecast (today -> month-end).
+  function spendChartSvg(c) {
+    var W = 720, H = 300, padL = 52, padR = 16, padT = 14, padB = 26;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var days = c.daysInMonth, axisMax = c.axisMax || 1;
+    function xFor(day) { return padL + (days > 1 ? (day - 1) / (days - 1) : 0) * plotW; }
+    function yFor(v) { return padT + plotH - (axisMax > 0 ? v / axisMax : 0) * plotH; }
+    var base = yFor(0);
+    var s = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, 'class': 'spend-chart' });
+
+    // Horizontal gridlines + y-axis ($) labels.
+    c.yTicks.forEach(function (t) {
+      var y = yFor(t.value);
+      s.appendChild(svg('line', { 'class': 'grid-line', x1: padL, y1: y, x2: W - padR, y2: y }));
+      var lbl = svg('text', { 'class': 'axis-label', x: padL - 8, y: y + 3, 'text-anchor': 'end' });
+      lbl.textContent = t.label; s.appendChild(lbl);
+    });
+
+    // X-axis day marks (roughly every 4-5 days, plus the last day of the month).
+    var step = days > 28 ? 5 : 4;
+    var marks = [];
+    for (var d = 1; d <= days; d += step) marks.push(d);
+    if (marks[marks.length - 1] !== days) marks.push(days);
+    marks.forEach(function (d) {
+      var t = svg('text', { 'class': 'axis-label', x: xFor(d), y: H - 8, 'text-anchor': 'middle' });
+      t.textContent = String(d); s.appendChild(t);
+    });
+
+    function areaPath(pts) {
+      var d = 'M ' + xFor(pts[0].day) + ' ' + base;
+      pts.forEach(function (p) { d += ' L ' + xFor(p.day) + ' ' + yFor(p.value); });
+      d += ' L ' + xFor(pts[pts.length - 1].day) + ' ' + base + ' Z';
+      return d;
+    }
+    function linePath(pts) {
+      var d = '';
+      pts.forEach(function (p, i) { d += (i ? ' L ' : 'M ') + xFor(p.day) + ' ' + yFor(p.value); });
+      return d;
+    }
+
+    // Forecast first (drawn under the actual line where they meet).
+    if (c.forecast && c.forecast.length > 1) {
+      s.appendChild(svg('path', { d: areaPath(c.forecast), fill: 'var(--ok)', 'fill-opacity': '0.10' }));
+      s.appendChild(svg('path', { d: linePath(c.forecast), fill: 'none', stroke: 'var(--accent)', 'stroke-width': '2', 'stroke-dasharray': '5 4' }));
+    }
+    if (c.actual && c.actual.length) {
+      s.appendChild(svg('path', { d: areaPath(c.actual), fill: 'var(--ok)', 'fill-opacity': '0.28' }));
+      s.appendChild(svg('path', { d: linePath(c.actual), fill: 'none', stroke: 'var(--ok)', 'stroke-width': '2' }));
+    }
+
+    // Per-day dots, each with a floating tooltip showing that day's cost on hover.
+    function dot(p, color, isForecast) {
+      var cx = xFor(p.day), cy = yFor(p.value);
+      var grp = svg('g');
+      var hit = svg('circle', { cx: cx, cy: cy, r: '9', fill: 'transparent', style: 'cursor:pointer' });
+      var d = svg('circle', { cx: cx, cy: cy, r: '3', fill: color, stroke: 'var(--vscode-editor-background, #1e1e1e)', 'stroke-width': '1.2', 'pointer-events': 'none' });
+      var head = isForecast ? (p.valueFmt + ' projected') : (p.valueFmt + ' total');
+      var sub = isForecast
+        ? (p.label + ' \u00B7 +' + p.dayValueFmt + '/day')
+        : (p.label + ' \u00B7 ' + p.dayValueFmt + ' that day');
+      var html = '<div class="tt">' + head + '</div><div class="td">' + sub + '</div>';
+      hit.addEventListener('mousemove', function (e) { showSpendTip(e, html); });
+      hit.addEventListener('mouseleave', hideSpendTip);
+      grp.appendChild(hit); grp.appendChild(d);
+      return grp;
+    }
+    if (c.forecast) { c.forecast.forEach(function (p, i) { if (i > 0) s.appendChild(dot(p, 'var(--accent)', true)); }); }
+    if (c.actual) { c.actual.forEach(function (p) { s.appendChild(dot(p, 'var(--ok)', false)); }); }
+    return s;
+  }
+  var _spendTipEl = null;
+  function spendTipEl() {
+    if (!_spendTipEl) { _spendTipEl = document.createElement('div'); _spendTipEl.className = 'spend-tip'; document.body.appendChild(_spendTipEl); }
+    return _spendTipEl;
+  }
+  function showSpendTip(e, html) {
+    var tip = spendTipEl();
+    tip.innerHTML = html;
+    tip.classList.add('show');
+    var r = tip.getBoundingClientRect();
+    var x = e.clientX + 14, y = e.clientY + 14;
+    if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - 14;
+    if (y + r.height > window.innerHeight - 8) y = e.clientY - r.height - 14;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function hideSpendTip() {
+    if (_spendTipEl) _spendTipEl.classList.remove('show');
+  }
+  function openSpendChart(m) {
+    var c = m.spendChart;
+    document.getElementById('overlay-title').textContent = 'Spend over time';
+    document.getElementById('overlay').classList.add('show');
+    var b = document.getElementById('overlay-body'); b.textContent = '';
+    if (!c || !c.hasData) { b.appendChild(el('div', 'empty', 'Not enough month data yet to chart spend.')); return; }
+    var cards = el('div', 'od-cards');
+    var c1 = el('div', 'od-card');
+    var k1 = el('div', 'k'); var sw1 = el('span', 'sw'); sw1.style.background = 'var(--ok)';
+    k1.appendChild(sw1); k1.appendChild(document.createTextNode('Actual cost \u00B7 ' + c.monthLabel));
+    c1.appendChild(k1); c1.appendChild(el('div', 'v', c.actualTotalFmt)); c1.appendChild(el('div', 'c', 'month to date'));
+    var c2 = el('div', 'od-card');
+    var k2 = el('div', 'k'); var sw2 = el('span', 'sw'); sw2.style.background = 'var(--accent)';
+    k2.appendChild(sw2); k2.appendChild(document.createTextNode('Forecast'));
+    c2.appendChild(k2); c2.appendChild(el('div', 'v', c.forecastTotalFmt)); c2.appendChild(el('div', 'c', c.paceNote || 'projected month-end'));
+    cards.appendChild(c1); cards.appendChild(c2);
+    b.appendChild(cards);
+    b.appendChild(spendChartSvg(c));
+    var lg = el('div', 'spend-legend');
+    var a = el('span'); var asw = el('span', 'sw'); asw.style.background = 'var(--ok)';
+    a.appendChild(asw); a.appendChild(document.createTextNode('Accumulated cost')); lg.appendChild(a);
+    var f = el('span'); var fsw = el('span', 'sw dash'); f.appendChild(fsw);
+    f.appendChild(document.createTextNode('Forecast cost')); lg.appendChild(f);
+    b.appendChild(lg);
+    b.appendChild(el('div', 'od-note', 'Each day\u2019s spend is the billed total apportioned by that day\u2019s token share. Hover a dot for that day\u2019s cost. The forecast is a straight line at the month\u2019s average daily pace, extended to month-end.'));
+    if (m.costByModel && m.costByModel.length) {
+      var cm = donutCell('Cost by model', m.costByModel, m.costFmt, '');
+      cm.style.marginTop = '14px';
+      b.appendChild(cm);
+    }
   }
   function emptyEl(t) { return el('div', 'empty', t); }
   function footer(noRefresh) {
