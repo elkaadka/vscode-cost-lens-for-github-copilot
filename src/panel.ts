@@ -69,6 +69,8 @@ export interface MixSeg {
   valueFmt: string;
   /** Share of the whole, formatted with adaptive precision (e.g. "99.8%" / "0.09%"). */
   pctFmt: string;
+  /** Optional trailing note for the legend, e.g. a request count like "620\u00D7". */
+  note?: string;
 }
 
 /** One actionable, data-backed cost tip shown in the Cost Explorer banner. */
@@ -83,6 +85,73 @@ export interface PanelTip {
   metric: string;
   /** Optional itemised choices (e.g. cheaper models, each with a cost and a saving badge). */
   options?: { label: string; value: string; badge?: string }[];
+}
+
+/**
+ * Month-to-date spend forecast. Built only at workspace scope (a month-level concept); session
+ * scope ships a disabled stub. All figures are derived from the per-day token rollup apportioned
+ * against billed credits, so they track real spend.
+ */
+export interface BudgetView {
+  /** True when there's enough current-month data to project a month-end figure. */
+  hasForecast: boolean;
+  /** Current month, e.g. "Jun 2026". */
+  monthLabel: string;
+  /** Spend so far this calendar month, formatted (e.g. "$141.82"). */
+  monthSpendFmt: string;
+  /** Credits so far this month, formatted (e.g. "1,287"); "-" when the log has no credit data. */
+  monthCreditsFmt: string;
+  /** Projected month-end spend at the current pace (e.g. "$425.46"). */
+  projectedSpendFmt: string;
+  /** Caption under the forecast, e.g. "42,546 credits at current pace". */
+  projectedNote: string;
+  /** How the pace was measured, e.g. "based on 11 active days". */
+  paceNote: string;
+}
+
+/** One cumulative point on the spend-over-time chart. */
+export interface SpendPoint {
+  /** Calendar day-of-month (1-based). */
+  day: number;
+  /** Short axis label, e.g. "Jun 1". */
+  label: string;
+  /** Cumulative spend in USD through this day. */
+  value: number;
+  /** Cumulative spend, formatted (e.g. "$141.82"). */
+  valueFmt: string;
+  /** That day's own spend in USD (actual) or projected daily spend (forecast). */
+  dayValue: number;
+  /** That day's spend, formatted (e.g. "$12.40"). */
+  dayValueFmt: string;
+}
+
+/**
+ * Cumulative spend across the current calendar month plus a forecast to month-end, for the
+ * Azure-style area chart opened from the Spend card. Actual runs day 1 → today; forecast continues
+ * today → month-end at the current pace (its first point coincides with the last actual point so
+ * the two lines join). Built from the per-day token rollup apportioned against billed credits.
+ */
+export interface SpendChart {
+  /** True when there's at least one day of month spend to plot. */
+  hasData: boolean;
+  /** Current month, e.g. "Jun 2026". */
+  monthLabel: string;
+  /** Cumulative actual spend, day 1 → today. */
+  actual: SpendPoint[];
+  /** Cumulative forecast, today → month-end; first point coincides with the last actual point. */
+  forecast: SpendPoint[];
+  /** Y-axis ceiling in USD, with a little headroom above the projected total. */
+  axisMax: number;
+  /** Pre-formatted y-axis ticks, low → high. */
+  yTicks: { value: number; label: string }[];
+  /** Days in the current month (the x-axis span). */
+  daysInMonth: number;
+  /** Spend so far this month, formatted (e.g. "$141.82"). */
+  actualTotalFmt: string;
+  /** Projected month-end spend, formatted (e.g. "$425.46"). */
+  forecastTotalFmt: string;
+  /** Caption under the forecast, e.g. "based on 11 active days". */
+  paceNote: string;
 }
 
 /** Real, measured usage aggregated across all chat sessions in the workspace, ready to render. */
@@ -111,6 +180,12 @@ export interface MeasuredView {
   model: string;
   /** Up to the top 3 models by total tokens. */
   topModels: ModelRow[];
+  /** Cost split per model (top 5 + "other"), summing to total cost. For the cost-by-model donut. */
+  costByModel: MixSeg[];
+  /** Month-to-date spend forecast. */
+  budget: BudgetView;
+  /** Cumulative spend over the current month + forecast, for the Spend-card area chart. */
+  spendChart: SpendChart;
   /** Last-7-days token usage, stacked per model. */
   week: WeekChart;
   /** Token composition (Input / Cached / Reply / Reasoning), summing to total tokens. */

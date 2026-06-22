@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Badge } from './badge';
 import { assess, Assessment, Band, bandWord, fmtTokens, fmtUSD } from './score';
 import { gatherSignals } from './signals';
-import { MeasuredView, MixSeg, ModelRow, PanelTip, WeekChart, WeekDay, WeekSegment } from './panel';
+import { MeasuredView, MixSeg, ModelRow, PanelTip, WeekChart, WeekDay, WeekSegment, BudgetView, SpendChart, SpendPoint } from './panel';
 import { CacheMeasured, CacheRow, SessionCacheView } from './cache';
 import { DashboardViewProvider, ScopePayload, SetupPayload } from './dashboard';
 import { scanGlobalTotals, workspaceStorageBase } from './global';
@@ -265,6 +265,9 @@ export function buildMeasured(t: UsageTotals, scope: 'workspace' | 'session' = '
   const colorMap = buildColorMap(t.modelUsage);
   const topModels = buildTopModels(t, colorMap);
   const week = buildWeek(t.daily, colorMap);
+  const costByModel = buildCostByModel(t, colorMap);
+  const budget = buildBudget(t, billedCost, scope);
+  const spendChart = buildSpendChart(t, billedCost);
 
   // Composition bars share four non-overlapping buckets that sum to the whole:
   //   Input (fresh) + Cached + Reply (visible output) + Reasoning.
@@ -407,6 +410,9 @@ export function buildMeasured(t: UsageTotals, scope: 'workspace' | 'session' = '
     costNote,
     model: t.models.length > 1 ? `${topModel} +${t.models.length - 1}` : topModel,
     topModels,
+    costByModel,
+    budget,
+    spendChart,
     week,
     tokenMix,
     costMix,
@@ -847,6 +853,284 @@ function localDayKey(d: Date): string {
   const m = `${d.getMonth() + 1}`.padStart(2, '0');
   const day = `${d.getDate()}`.padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+/** Cost split per model (top 5 by tokens + an aggregated "other"), as donut-ready segments that
+ * sum to the workspace total cost. Each model is priced with the same billed-credit-first logic as
+ * the top-models list, so the donut and the list agree. */
+function buildCostByModel(t: UsageTotals, colorMap: Map<string, string>): MixSeg[] {
+  if (!t.modelUsage.length) {
+    return [];
+  }
+  const priced = t.modelUsage.map((mu) => ({ mu, cost: modelCostUSD(mu) }));
+  const total = priced.reduce((s, p) => s + p.cost, 0);
+  const pct = (n: number): number => (total > 0 ? (n / total) * 100 : 0);
+  const adaptivePct = (n: number): string => {
+    const p = pct(n);
+    if (p <= 0) return '0%';
+    if (p >= 10) return `${Math.round(p)}%`;
+    if (p >= 1) return `${p.toFixed(1)}%`;
+    return `${p.toFixed(2)}%`;
+  };
+  const segs: MixSeg[] = priced.slice(0, 5).map(({ mu, cost }) => ({
+    label: mu.model,
+    color: colorMap.get(mu.model) ?? OTHER_COLOR,
+    pct: pct(cost),
+    valueFmt: fmtUSD(cost),
+    pctFmt: adaptivePct(cost),
+    note: `${mu.requests.toLocaleString('en-US')}\u00D7`,
+  }));
+  const otherCost = priced.slice(5).reduce((s, p) => s + p.cost, 0);
+  if (otherCost > 0) {
+    const otherReq = priced.slice(5).reduce((s, p) => s + p.mu.requests, 0);
+    segs.push({
+      label: 'other',
+      color: OTHER_COLOR,
+      pct: pct(otherCost),
+      valueFmt: fmtUSD(otherCost),
+      pctFmt: adaptivePct(otherCost),
+      note: `${otherReq.toLocaleString('en-US')}\u00D7`,
+    });
+  }
+  return segs;
+}
+
+/** Format a credit count with thousands separators (e.g. "1,287"); "-" when there's no credit data. */
+function fmtCreditsFull(n: number): string {
+  return n > 0 ? Math.round(n).toLocaleString('en-US') : '-';
+}
+
+/** A disabled budget stub for scopes (session) where a month-level forecast is meaningless. */
+function emptyBudget(): BudgetView {
+  return {
+    hasForecast: false,
+    monthLabel: '',
+    monthSpendFmt: '$0.00',
+    monthCreditsFmt: '-',
+    projectedSpendFmt: '$0.00',
+    projectedNote: '',
+    paceNote: '',
+  };
+}
+
+/**
+ * Shared month-to-date pace, used by both the Forecast cell and the Spend-over-time chart so they
+ * never disagree. Apportions the all-time billed total to each day of the current calendar month by
+ * that day's token share, then derives a linear daily rate (month-to-date ÷ calendar days elapsed),
+ * so the forecast is a straight line from $0 on the 1st through today, extended to month-end.
+ */
+interface MonthPace {
+  monthLabel: string;
+  daysInMonth: number;
+  dayOfMonth: number;
+  monthSpend: number;
+  monthCredits: number;
+  /** Linear daily spend used to project the rest of the month. */
+  spendPerDay: number;
+  creditsPerDay: number;
+  /** Per-day spend keyed by day-of-month, for the chart's actual series. */
+  spendByDom: Map<number, number>;
+  firstActiveDay: number | null;
+}
+function computeMonthPace(t: UsageTotals, billedCost: number): MonthPace {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const dayOfMonth = now.getDate();
+  const monthLabel = `${MONTH[now.getMonth()]} ${now.getFullYear()}`;
+
+  const grandTokens = t.inputTokens + t.outputTokens;
+  const spendByDom = new Map<number, number>();
+  let firstActiveDay: number | null = null;
+  let monthSpend = 0;
+  let monthCredits = 0;
+  if (grandTokens > 0) {
+    for (const d of t.daily) {
+      const dd = new Date(`${d.day}T00:00:00`);
+      if (dd >= monthStart && dd <= now) {
+        const dom = dd.getDate();
+        const frac = d.totalTokens / grandTokens;
+        const s = billedCost * frac;
+        const c = t.aiu * frac;
+        spendByDom.set(dom, (spendByDom.get(dom) ?? 0) + s);
+        monthSpend += s;
+        monthCredits += c;
+        if (firstActiveDay === null || dom < firstActiveDay) {
+          firstActiveDay = dom;
+        }
+      }
+    }
+  }
+
+  // Linear pace: average daily spend over the calendar days elapsed this month (from the 1st
+  // through today), so the forecast is a straight line drawn from $0 on the 1st through today
+  // and extended to month-end.
+  const spendPerDay = dayOfMonth > 0 ? monthSpend / dayOfMonth : 0;
+  const creditsPerDay = dayOfMonth > 0 ? monthCredits / dayOfMonth : 0;
+
+  return {
+    monthLabel,
+    daysInMonth,
+    dayOfMonth,
+    monthSpend,
+    monthCredits,
+    spendPerDay,
+    creditsPerDay,
+    spendByDom,
+    firstActiveDay,
+  };
+}
+
+/**
+ * Month-to-date spend forecast. Apportions the workspace's billed total to the current calendar
+ * month by the per-day token share, then projects the pace (month-to-date ÷ calendar days elapsed)
+ * across the whole month. Month-scope only; the session scope gets a disabled stub.
+ */
+function buildBudget(t: UsageTotals, billedCost: number, scope: 'workspace' | 'session'): BudgetView {
+  if (scope === 'session') {
+    return emptyBudget();
+  }
+  const pace = computeMonthPace(t, billedCost);
+  const { monthLabel, daysInMonth, dayOfMonth, monthSpend, monthCredits, spendPerDay, creditsPerDay } = pace;
+
+  // Project month-end as spend-so-far plus the linear pace applied to the days left (the same
+  // basis as the Spend-over-time chart's forecast line, so the two figures always agree).
+  const daysLeftInMonth = Math.max(0, daysInMonth - dayOfMonth);
+  const projectedSpend = monthSpend + spendPerDay * daysLeftInMonth;
+  const projectedCredits = monthCredits + creditsPerDay * daysLeftInMonth;
+  const hasForecast = monthSpend > 0;
+
+  const projectedNote =
+    monthCredits > 0
+      ? `${fmtCreditsFull(projectedCredits)} credits at average daily pace`
+      : 'at average daily pace · list-price estimate';
+  const paceNote = `${monthSpendFmt(monthSpend)} so far · over ${dayOfMonth} day${dayOfMonth === 1 ? '' : 's'} this month`;
+
+  return {
+    hasForecast,
+    monthLabel,
+    monthSpendFmt: monthSpendFmt(monthSpend),
+    monthCreditsFmt: fmtCreditsFull(monthCredits),
+    projectedSpendFmt: monthSpendFmt(projectedSpend),
+    projectedNote,
+    paceNote,
+  };
+}
+
+/** USD with a real "$0.00" zero (the shared fmtUSD renders sub-cent values as "<$0.01"). */
+function monthSpendFmt(n: number): string {
+  return `$${n.toFixed(2)}`;
+}
+
+/** Round a value up to a "nice" axis ceiling (1, 2, 2.5 or 5 × a power of ten) so the y-axis lands
+ * on readable round numbers regardless of the spend magnitude. */
+function niceCeil(n: number): number {
+  if (n <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(n)));
+  const f = n / pow;
+  const nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+  return nice * pow;
+}
+
+/** Compact USD for axis ticks: "$2.5K" / "$1.2K" past a thousand, else "$12.50"/"$0". */
+function fmtUSDAxis(n: number): string {
+  if (n <= 0) return '$0';
+  if (n >= 1000) {
+    const k = n / 1000;
+    return `$${k >= 10 ? Math.round(k) : k.toFixed(1)}K`;
+  }
+  if (n >= 100) return `$${Math.round(n)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+/**
+ * Cumulative spend across the current calendar month plus a forecast to month-end, for the
+ * Azure-style area chart on the Spend card. Each day's spend is the billed total apportioned by
+ * that day's share of all-time tokens (the same basis as the budget forecast), accumulated from
+ * day 1 to today. The forecast continues from today to month-end at the linear month-to-date
+ * pace, with its first point pinned to the last actual point so the two lines join cleanly.
+ */
+function buildSpendChart(t: UsageTotals, billedCost: number): SpendChart {
+  const pace = computeMonthPace(t, billedCost);
+  const { monthLabel, daysInMonth, dayOfMonth, monthSpend, spendPerDay, firstActiveDay, spendByDom } = pace;
+  const monShort = monthLabel.split(' ')[0];
+
+  const empty: SpendChart = {
+    hasData: false,
+    monthLabel,
+    actual: [],
+    forecast: [],
+    axisMax: 1,
+    yTicks: [],
+    daysInMonth,
+    actualTotalFmt: '$0.00',
+    forecastTotalFmt: '$0.00',
+    paceNote: '',
+  };
+  if (monthSpend <= 0 || firstActiveDay === null) {
+    return empty;
+  }
+
+  // Cumulative actual, day 1 → today; each point also carries that day's own spend for the dot tip.
+  const actual: SpendPoint[] = [];
+  let cum = 0;
+  for (let dom = 1; dom <= dayOfMonth; dom++) {
+    const day = spendByDom.get(dom) ?? 0;
+    cum += day;
+    actual.push({
+      day: dom,
+      label: `${monShort} ${dom}`,
+      value: cum,
+      valueFmt: monthSpendFmt(cum),
+      dayValue: day,
+      dayValueFmt: monthSpendFmt(day),
+    });
+  }
+
+  // Forecast continues from today to month-end at the linear pace; pin the first point to
+  // today's actual total so the dashed line joins the solid one.
+  const forecast: SpendPoint[] = [
+    {
+      day: dayOfMonth,
+      label: `${monShort} ${dayOfMonth}`,
+      value: monthSpend,
+      valueFmt: monthSpendFmt(monthSpend),
+      dayValue: 0,
+      dayValueFmt: monthSpendFmt(0),
+    },
+  ];
+  let fcum = monthSpend;
+  for (let dom = dayOfMonth + 1; dom <= daysInMonth; dom++) {
+    fcum += spendPerDay;
+    forecast.push({
+      day: dom,
+      label: `${monShort} ${dom}`,
+      value: fcum,
+      valueFmt: monthSpendFmt(fcum),
+      dayValue: spendPerDay,
+      dayValueFmt: monthSpendFmt(spendPerDay),
+    });
+  }
+  const projectedSpend = fcum;
+
+  const axisMax = niceCeil(Math.max(projectedSpend, monthSpend));
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({
+    value: axisMax * f,
+    label: fmtUSDAxis(axisMax * f),
+  }));
+
+  return {
+    hasData: true,
+    monthLabel,
+    actual,
+    forecast,
+    axisMax,
+    yTicks,
+    daysInMonth,
+    actualTotalFmt: monthSpendFmt(monthSpend),
+    forecastTotalFmt: monthSpendFmt(projectedSpend),
+    paceNote: `over ${pace.dayOfMonth} day${pace.dayOfMonth === 1 ? '' : 's'} this month`,
+  };
 }
 
 /** Build a 7-day (today and the prior six) stacked-by-model token chart. Days with no usage are
