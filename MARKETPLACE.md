@@ -22,15 +22,15 @@ A live badge in the status bar keeps your running credit total in view. Hover fo
 
 ## A dashboard for every scope
 
-Three tabs **Global**, **Workspace**, and **Session** each a clean bento grid of where your
-tokens and money actually go.
+Four tabs **Global**, **Workspace**, **Session** and **Optimize** each a clean bento grid of where
+your tokens and money actually go. Open it in the sidebar, or full-screen from the status-bar badge.
 
 <p align="center">
   <img src="media/screenshots/workspace.png" alt="Workspace dashboard with spend, token and cost breakdowns" width="360" />
 </p>
 
 <p align="center">
-  <img src="media/screenshots/global.png" alt="Global tab: spend across every workspace" width="360" />
+  <img src="media/screenshots/global.png" alt="Global tab: spend across every workspace, by project" width="360" />
 </p>
 
 ## Find your priciest prompts
@@ -44,14 +44,15 @@ breakdown, prompt and reply text, tools used, and a per-call table.
 
 ## Spend less, automatically
 
-The Session tab tucks ranked, data-backed tips into one **Ways to save** panel: long chat history,
-idle tools, high reasoning left on, and which cheaper model would do the same work for less. Expand
-it for the full breakdown and per-model estimates.
+The **Optimize** tab pulls every “spend less” signal into one place: ranked, data-backed tips (long
+chat history, idle tools, high reasoning left on, and which cheaper model would do the same work for
+less), a worst-first breakdown of prompting habits detected from your own logs, and a short “how to
+do better” playbook. Expand any tip for the full breakdown and per-model estimates.
 
 <p align="center">
-  <img src="media/screenshots/session.png" alt="Session tab with a collapsed Ways to save panel" width="360" />
+  <img src="media/screenshots/session.png" alt="Cost-saving tips" width="360" />
   &nbsp;
-  <img src="media/screenshots/session_tips.png" alt="Ways to save panel expanded with a cheaper-model suggestion" width="360" />
+  <img src="media/screenshots/session_tips.png" alt="A tip expanded with a cheaper-model suggestion" width="360" />
 </p>
 
 ---
@@ -59,9 +60,10 @@ it for the full breakdown and per-model estimates.
 ## ✨ What you get
 
 - 📈 **Live status-bar badge** your credit total, always visible
-- 🗂️ **Global / Workspace / Session** views with token & cost donuts
+- 🗂️ **Global / Workspace / Session** views with token & cost donuts, openable full-screen
 - 💸 **Priciest prompts** ranked by real billed credits, click for full detail
 - ♻️ **Cache & tools** breakdowns see what rides on every request
+- 🧩 **Optimize tab** ranked tips, detected prompting anti-patterns, and a best-practice playbook
 - 💡 **Actionable tips** including *“switch to this model to spend X% less”*
 - 🔬 **Measured, not guessed** read from Copilot’s own logs, anchored to billed credits
 

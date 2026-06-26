@@ -5,9 +5,10 @@ import { gatherSignals } from './signals';
 import { type MeasuredView, type MixSeg, type ModelRow, type PanelTip, type WeekChart, type WeekDay, type WeekSegment, type BudgetView, type SpendChart, type SpendPoint } from './panel';
 import { type CacheMeasured, type CacheRow, type SessionCacheView } from './cache';
 import { DashboardViewProvider, type ScopePayload, type SetupPayload } from './dashboard';
-import { scanGlobalTotals, workspaceStorageBase } from './global';
+import { scanGlobalTotals, workspaceStorageBase, type GlobalTotals } from './global';
 import { type ToolRow, type ToolsMeasured } from './tools';
 import { type PromptCallRow, type PromptDetailView, type PromptRow, type TopPromptsMeasured } from './prompts';
+import { detectAntiPatterns } from './antipatterns';
 import { chatContextBus, sessionMeter } from './meter';
 import { type Capabilities, detectCapabilities, enableTokenLogging } from './capabilities';
 import {
@@ -47,7 +48,11 @@ export function activate(context: vscode.ExtensionContext): void {
   ext.badge = new Badge(SHOW_DETAILS_CMD);
   ext.dashboard = new DashboardViewProvider(
     context.extensionUri,
-    () => scanGlobalTotals(workspaceStorageBase(context)),
+    async () => {
+      const totals = await scanGlobalTotals(workspaceStorageBase(context));
+      totals.spendChart = buildGlobalSpendChart(totals);
+      return totals;
+    },
     (id) => buildPromptDetailView(id),
   );
 
@@ -199,6 +204,7 @@ async function refreshCapabilities(): Promise<void> {
             cache: buildCache(totals) ?? null,
             tools: buildTools(totals) ?? null,
             prompts: buildTopPrompts(totals) ?? null,
+            antiPatterns: detectAntiPatterns(totals.promptTurns ?? []),
           };
           const sessionTotals = reader.activeSessionTotals;
           const sessScope: ScopePayload = {
@@ -206,6 +212,7 @@ async function refreshCapabilities(): Promise<void> {
             cache: buildCache(sessionTotals) ?? null,
             tools: buildTools(sessionTotals) ?? null,
             prompts: buildTopPrompts(sessionTotals) ?? null,
+            antiPatterns: detectAntiPatterns(sessionTotals.promptTurns ?? []),
           };
           ext.dashboard.setScopes(wsScope, sessScope);
           ext.badge.setMeasured(measured);
@@ -927,7 +934,16 @@ interface MonthPace {
   spendByDom: Map<number, number>;
   firstActiveDay: number | null;
 }
-function computeMonthPace(t: UsageTotals, billedCost: number): MonthPace {
+
+/** The minimal slice of usage the spend chart and month-pace need (UsageTotals satisfies it, as
+ * does the global rollup, so both scopes can share one builder). */
+interface SpendInput {
+  daily: DayUsage[];
+  inputTokens: number;
+  outputTokens: number;
+  aiu: number;
+}
+function computeMonthPace(t: SpendInput, billedCost: number): MonthPace {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -1045,7 +1061,7 @@ function fmtUSDAxis(n: number): string {
  * day 1 to today. The forecast continues from today to month-end at the linear month-to-date
  * pace, with its first point pinned to the last actual point so the two lines join cleanly.
  */
-function buildSpendChart(t: UsageTotals, billedCost: number): SpendChart {
+function buildSpendChart(t: SpendInput, billedCost: number): SpendChart {
   const pace = computeMonthPace(t, billedCost);
   const { monthLabel, daysInMonth, dayOfMonth, monthSpend, spendPerDay, firstActiveDay, spendByDom } = pace;
   const monShort = monthLabel.split(' ')[0];
@@ -1126,6 +1142,16 @@ function buildSpendChart(t: UsageTotals, billedCost: number): SpendChart {
     forecastTotalFmt: monthSpendFmt(projectedSpend),
     paceNote: `over ${pace.dayOfMonth} day${pace.dayOfMonth === 1 ? '' : 's'} this month`,
   };
+}
+
+/** Spend-over-time chart for the Global view, built from the cross-workspace per-day token rollup.
+ * Apportions the all-workspaces billed total to each day by that day's token share, matching how
+ * the per-workspace chart is derived. */
+function buildGlobalSpendChart(t: GlobalTotals): SpendChart {
+  return buildSpendChart(
+    { daily: t.daily, inputTokens: t.totalTokens, outputTokens: 0, aiu: t.totalCredits },
+    t.totalCredits * CREDIT_USD,
+  );
 }
 
 /** Build a 7-day (today and the prior six) stacked-by-model token chart. Days with no usage are
@@ -1348,7 +1374,9 @@ async function enableLogging(): Promise<void> {
 }
 
 async function showDetails(): Promise<void> {
-  await vscode.commands.executeCommand(`${DashboardViewProvider.viewType}.focus`);
+  // Clicking the status-bar credits opens the dashboard full-screen in the editor area (no
+  // activity-bar menu), rather than focusing the narrow sidebar view.
+  ext.dashboard.openPanel();
   if (!ext.lastResult) {
     await refresh();
   }
