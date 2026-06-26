@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { BadgeDisplay } from './badge';
-import { Assessment } from './score';
+import { type BadgeDisplay } from './badge';
+import { type Assessment } from './score';
 
 /** Running totals for the current session, accumulated from real `@costlens` turns only. */
 export interface SessionTotals {

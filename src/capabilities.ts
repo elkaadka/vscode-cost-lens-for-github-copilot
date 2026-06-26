@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { findDebugLogsDir } from './usagelog';
+import { logError } from './log';
 
 /**
  * What level of cost reporting we can honestly offer right now.
@@ -93,7 +94,8 @@ export async function enableTokenLogging(): Promise<boolean> {
       .getConfiguration()
       .update(LOGGING_SETTING_ID, true, vscode.ConfigurationTarget.Global);
     return true;
-  } catch {
+  } catch (error) {
+    logError('Failed to enable Copilot token logging', error);
     return false;
   }
 }

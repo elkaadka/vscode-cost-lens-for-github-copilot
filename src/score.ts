@@ -1,4 +1,4 @@
-import { CostTier } from './rates';
+import { type CostTier } from './rates';
 
 /** Inputs the score engine reasons over. All measured/estimated client-side. */
 export interface Signals {

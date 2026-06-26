@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
-import { BadgeDisplay } from './badge';
-import { Assessment, Band, bandWord, Factor, fmtTokens, fmtUSD, Severity } from './score';
-import { SessionTotals } from './meter';
-import { Capabilities, CapabilityLevel } from './capabilities';
+import { makeNonce, buildCsp } from './webview';
+import { type BadgeDisplay } from './badge';
+import { type Assessment, type Band, bandWord, type Factor, fmtTokens, fmtUSD, type Severity } from './score';
+import { type SessionTotals } from './meter';
+import { type Capabilities, type CapabilityLevel } from './capabilities';
 
 interface ViewFactor {
   label: string;
@@ -402,12 +403,7 @@ export class HealthViewProvider implements vscode.WebviewViewProvider {
 
   private html(webview: vscode.Webview): string {
     const nonce = makeNonce();
-    const csp = [
-      `default-src 'none'`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src 'nonce-${nonce}'`,
-      `img-src ${webview.cspSource} https: data:`,
-    ].join('; ');
+    const csp = buildCsp(webview, nonce, { images: true });
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -1070,14 +1066,6 @@ function buildSetup(caps: Capabilities): ViewState {
   };
 }
 
-function makeNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let s = '';
-  for (let i = 0; i < 24; i++) {
-    s += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return s;
-}
 
 function emptySession(): SessionView {
   return { turns: 0, tokensFmt: '0', costFmt: '$0' };

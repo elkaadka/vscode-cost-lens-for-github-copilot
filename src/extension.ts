@@ -1,26 +1,28 @@
 import * as vscode from 'vscode';
 import { Badge } from './badge';
-import { assess, Assessment, Band, bandWord, fmtTokens, fmtUSD } from './score';
+import { assess, type Band, bandWord, fmtTokens, fmtUSD } from './score';
 import { gatherSignals } from './signals';
-import { MeasuredView, MixSeg, ModelRow, PanelTip, WeekChart, WeekDay, WeekSegment, BudgetView, SpendChart, SpendPoint } from './panel';
-import { CacheMeasured, CacheRow, SessionCacheView } from './cache';
-import { DashboardViewProvider, ScopePayload, SetupPayload } from './dashboard';
+import { type MeasuredView, type MixSeg, type ModelRow, type PanelTip, type WeekChart, type WeekDay, type WeekSegment, type BudgetView, type SpendChart, type SpendPoint } from './panel';
+import { type CacheMeasured, type CacheRow, type SessionCacheView } from './cache';
+import { DashboardViewProvider, type ScopePayload, type SetupPayload } from './dashboard';
 import { scanGlobalTotals, workspaceStorageBase } from './global';
-import { ToolRow, ToolsMeasured } from './tools';
-import { PromptCallRow, PromptDetailView, PromptRow, TopPromptsMeasured } from './prompts';
+import { type ToolRow, type ToolsMeasured } from './tools';
+import { type PromptCallRow, type PromptDetailView, type PromptRow, type TopPromptsMeasured } from './prompts';
 import { chatContextBus, sessionMeter } from './meter';
-import { Capabilities, detectCapabilities, enableTokenLogging } from './capabilities';
+import { type Capabilities, detectCapabilities, enableTokenLogging } from './capabilities';
 import {
-  DayUsage,
+  type DayUsage,
   loadPromptDetail,
-  ModelUsage,
-  PromptTurn,
-  SessionCache,
-  ToolGroup,
-  UsageTotals,
+  type ModelUsage,
+  type PromptTurn,
+  type SessionCache,
+  type ToolGroup,
+  type UsageTotals,
   WorkspaceUsageReader,
 } from './usagelog';
-import { cachedCostUSD, inputCostUSD, ModelRate, outputCostUSD, resolveRate, suggestableRates } from './rates';
+import { cachedCostUSD, inputCostUSD, type ModelRate, outputCostUSD, resolveRate, suggestableRates } from './rates';
+import { ext } from './extensionVariables';
+import { initOutputChannel, logInfo, registerCommand } from './log';
 const SHOW_DETAILS_CMD = 'copilotControlPlane.showDetails';
 const REFRESH_CMD = 'copilotControlPlane.refresh';
 const RESET_SESSION_CMD = 'copilotControlPlane.resetSession';
@@ -38,37 +40,29 @@ const IDLE_TOOL_MIN_TOKENS = 5_000;
 const TOP_TIER_OUTPUT_PRICE = 2_500;
 const MID_TIER_OUTPUT_PRICE = 1_000;
 
-let badge: Badge;
-let dashboard: DashboardViewProvider;
-let debounce: ReturnType<typeof setTimeout> | undefined;
-let lastResult: Assessment | undefined;
-let refreshing = false;
-let pendingRefresh = false;
-let extContext: vscode.ExtensionContext | undefined;
-let usageReader: WorkspaceUsageReader | undefined;
-let usageReaderDir: string | undefined;
-let capsBusy = false;
-
 export function activate(context: vscode.ExtensionContext): void {
-  extContext = context;
-  badge = new Badge(SHOW_DETAILS_CMD);
-  dashboard = new DashboardViewProvider(
+  ext.context = context;
+  ext.output = initOutputChannel();
+  logInfo('Cost Lens is starting');
+  ext.badge = new Badge(SHOW_DETAILS_CMD);
+  ext.dashboard = new DashboardViewProvider(
     context.extensionUri,
     () => scanGlobalTotals(workspaceStorageBase(context)),
     (id) => buildPromptDetailView(id),
   );
 
   context.subscriptions.push(
-    badge,
+    ext.output,
+    ext.badge,
     sessionMeter,
     chatContextBus,
-    vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewType, dashboard, {
+    vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewType, ext.dashboard, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    vscode.commands.registerCommand(SHOW_DETAILS_CMD, showDetails),
-    vscode.commands.registerCommand(REFRESH_CMD, () => void refreshAll()),
-    vscode.commands.registerCommand(RESET_SESSION_CMD, () => sessionMeter.reset()),
-    vscode.commands.registerCommand(ENABLE_LOGGING_CMD, () => void enableLogging()),
+    registerCommand(SHOW_DETAILS_CMD, showDetails),
+    registerCommand(REFRESH_CMD, () => refreshAll()),
+    registerCommand(RESET_SESSION_CMD, () => sessionMeter.reset()),
+    registerCommand(ENABLE_LOGGING_CMD, () => enableLogging()),
     vscode.window.onDidChangeActiveTextEditor(schedule),
     vscode.window.onDidChangeTextEditorSelection(schedule),
     vscode.workspace.onDidChangeTextDocument((e) => {
@@ -101,45 +95,45 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  if (debounce) {
-    clearTimeout(debounce);
+  if (ext.debounce) {
+    clearTimeout(ext.debounce);
   }
-  usageReader?.dispose();
-  usageReader = undefined;
+  ext.usageReader?.dispose();
+  ext.usageReader = undefined;
 }
 
 function schedule(): void {
-  if (debounce) {
-    clearTimeout(debounce);
+  if (ext.debounce) {
+    clearTimeout(ext.debounce);
   }
-  debounce = setTimeout(() => void refresh(), DEBOUNCE_MS);
+  ext.debounce = setTimeout(() => void refresh(), DEBOUNCE_MS);
 }
 
 async function refreshAll(): Promise<void> {
   await Promise.all([refresh(), refreshCapabilities()]);
-  if (usageReader) {
-    await usageReader.refresh();
+  if (ext.usageReader) {
+    await ext.usageReader.refresh();
   }
 }
 
 /** Editor-derived estimate → status-bar badge only. The panel shows measured cost. */
 async function refresh(): Promise<void> {
-  if (refreshing) {
-    pendingRefresh = true;
+  if (ext.refreshing) {
+    ext.pendingRefresh = true;
     return;
   }
-  refreshing = true;
+  ext.refreshing = true;
   try {
     const gathered = await gatherSignals();
     if (!gathered.available) {
-      lastResult = undefined;
+      ext.lastResult = undefined;
       return;
     }
-    lastResult = assess(gathered.signals);
+    ext.lastResult = assess(gathered.signals);
   } finally {
-    refreshing = false;
-    if (pendingRefresh) {
-      pendingRefresh = false;
+    ext.refreshing = false;
+    if (ext.pendingRefresh) {
+      ext.pendingRefresh = false;
       void refresh();
     }
   }
@@ -173,31 +167,32 @@ function buildSetupPayload(caps: Capabilities): SetupPayload {
 
 /** Detect what we can measure and (re)wire the live usage reader for `full` mode. */
 async function refreshCapabilities(): Promise<void> {
-  if (!extContext || capsBusy) {
+  if (!ext.context || ext.capsBusy) {
     return;
   }
-  capsBusy = true;
+  ext.capsBusy = true;
   try {
-    const caps = await detectCapabilities(extContext);
+    const caps = await detectCapabilities(ext.context);
     // No folder/workspace open: the Workspace and Session scopes need an open project, but the
     // Global tab scans every workspace's logs on disk and works regardless. Show the dashboard
     // with Global active and the other two tabs disabled, instead of a full-screen setup block.
     const noWorkspace = !vscode.workspace.workspaceFolders?.length;
     if (noWorkspace) {
-      dashboard.setCapability(false, null, true);
+      ext.dashboard.setCapability(false, null, true);
     } else {
-      dashboard.setCapability(
+      ext.dashboard.setCapability(
         caps.level === 'full',
         caps.level === 'full' ? null : buildSetupPayload(caps),
         false,
       );
     }
     if (caps.level === 'full' && caps.debugLogsDir) {
-      if (!usageReader || usageReaderDir !== caps.debugLogsDir) {
-        usageReader?.dispose();
-        usageReaderDir = caps.debugLogsDir;
-        usageReader = new WorkspaceUsageReader(caps.debugLogsDir);
-        usageReader.onDidChange((totals) => {
+      if (!ext.usageReader || ext.usageReaderDir !== caps.debugLogsDir) {
+        ext.usageReader?.dispose();
+        ext.usageReaderDir = caps.debugLogsDir;
+        const reader = new WorkspaceUsageReader(caps.debugLogsDir);
+        ext.usageReader = reader;
+        reader.onDidChange((totals) => {
           const measured = buildMeasured(totals, 'workspace');
           const wsScope: ScopePayload = {
             measured,
@@ -205,26 +200,26 @@ async function refreshCapabilities(): Promise<void> {
             tools: buildTools(totals) ?? null,
             prompts: buildTopPrompts(totals) ?? null,
           };
-          const sessionTotals = usageReader!.activeSessionTotals;
+          const sessionTotals = reader.activeSessionTotals;
           const sessScope: ScopePayload = {
             measured: buildMeasured(sessionTotals, 'session'),
             cache: buildCache(sessionTotals) ?? null,
             tools: buildTools(sessionTotals) ?? null,
             prompts: buildTopPrompts(sessionTotals) ?? null,
           };
-          dashboard.setScopes(wsScope, sessScope);
-          badge.setMeasured(measured);
+          ext.dashboard.setScopes(wsScope, sessScope);
+          ext.badge.setMeasured(measured);
         });
-        usageReader.start();
+        reader.start();
       }
     } else {
-      usageReader?.dispose();
-      usageReader = undefined;
-      usageReaderDir = undefined;
-      badge.setUnavailable('Enable Copilot logging to measure usage');
+      ext.usageReader?.dispose();
+      ext.usageReader = undefined;
+      ext.usageReaderDir = undefined;
+      ext.badge.setUnavailable('Enable Copilot logging to measure usage');
     }
   } finally {
-    capsBusy = false;
+    ext.capsBusy = false;
   }
 }
 
@@ -1258,7 +1253,7 @@ function modelLabelOf(models: string[]): string {
 
 /** Map an on-demand prompt detail into the detail-drawer view-model. Returns null when unavailable. */
 async function buildPromptDetailView(id: string): Promise<PromptDetailView | null> {
-  if (!usageReaderDir) {
+  if (!ext.usageReaderDir) {
     return null;
   }
   const hash = id.lastIndexOf('#');
@@ -1270,7 +1265,7 @@ async function buildPromptDetailView(id: string): Promise<PromptDetailView | nul
   if (!Number.isInteger(index) || index < 0) {
     return null;
   }
-  const detail = await loadPromptDetail(usageReaderDir, sessionId, index);
+  const detail = await loadPromptDetail(ext.usageReaderDir, sessionId, index);
   if (!detail) {
     return null;
   }
@@ -1354,7 +1349,7 @@ async function enableLogging(): Promise<void> {
 
 async function showDetails(): Promise<void> {
   await vscode.commands.executeCommand(`${DashboardViewProvider.viewType}.focus`);
-  if (!lastResult) {
+  if (!ext.lastResult) {
     await refresh();
   }
 }

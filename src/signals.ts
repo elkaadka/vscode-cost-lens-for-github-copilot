@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { inputCostUSD, outputCostUSD, resolveRate } from './rates';
-import { Signals } from './score';
+import { type Signals } from './score';
 
 export interface GatheredSignals {
   available: boolean;

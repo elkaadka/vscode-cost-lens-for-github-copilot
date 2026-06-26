@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { Capabilities } from './capabilities';
+import { makeNonce, buildCsp } from './webview';
+import { type Capabilities } from './capabilities';
 
 /** One row in the cache prefix composition (System / Tools / History) or the tool-group list. */
 export interface CacheRow {
@@ -114,11 +115,7 @@ export class CacheViewProvider implements vscode.WebviewViewProvider {
 
   private html(webview: vscode.Webview): string {
     const nonce = makeNonce();
-    const csp = [
-      `default-src 'none'`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src 'nonce-${nonce}'`,
-    ].join('; ');
+    const csp = buildCsp(webview, nonce);
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -299,13 +296,4 @@ export class CacheViewProvider implements vscode.WebviewViewProvider {
 </body>
 </html>`;
   }
-}
-
-function makeNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let out = '';
-  for (let i = 0; i < 32; i++) {
-    out += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return out;
 }

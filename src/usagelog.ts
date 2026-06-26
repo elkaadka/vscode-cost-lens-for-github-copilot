@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as fsp from 'fs/promises';
-import { Dirent } from 'fs';
+import { type Dirent } from 'fs';
 import * as path from 'path';
 import { countTokens } from './tokenizer';
 import { setModelCatalog } from './rates';
