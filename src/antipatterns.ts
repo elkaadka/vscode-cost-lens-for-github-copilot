@@ -15,7 +15,8 @@ export type APCategory =
   | 'Context management'
   | 'Tool mastery'
   | 'Model selection'
-  | 'Session hygiene';
+  | 'Session hygiene'
+  | 'Cost efficiency';
 
 /** One detected anti-pattern, ready to render. */
 export interface AntiPattern {
@@ -66,10 +67,50 @@ const THRASH_GAP_MS = 45_000;
 const THRASH_MIN_BURST = 4;
 /** A session touching at least this many distinct models is "model hopping". */
 const HOP_MIN_MODELS = 3;
+/** A session with at least this many turns is a marathon (context bloat risk). */
+const MARATHON_TURNS = 40;
+/** ...or one spanning at least this long without starting a fresh chat. */
+const MARATHON_SPAN_MS = 3 * 60 * 60_000;
+/** Context creep needs at least this many turns in a session to judge a trend. */
+const CREEP_MIN_TURNS = 5;
+/** Creep fires when the last turn's input is at least this multiple of the first turn's. */
+const CREEP_GROWTH = 2;
+/** ...and has grown by at least this many tokens (guards against tiny absolute changes). */
+const CREEP_MIN_DELTA = 40_000;
 /** Minimum matches before a per-turn rule is worth surfacing (avoid nagging on a single case). */
 const MIN_REPORTABLE = 2;
 /** Cap on example snippets shown per pattern. */
 const MAX_EXAMPLES = 3;
+
+/** Filler-only turns: no actionable ask, just an acknowledgement that still costs a billed turn. */
+const FILLER_PHRASES = new Set([
+  'thanks',
+  'thank you',
+  'thx',
+  'ty',
+  'ok',
+  'okay',
+  'k',
+  'kk',
+  'yes',
+  'yep',
+  'yeah',
+  'no',
+  'nope',
+  'cool',
+  'nice',
+  'great',
+  'perfect',
+  'awesome',
+  'sure',
+  'continue',
+  'go on',
+  'go ahead',
+  'proceed',
+  'do it',
+  'next',
+  'please continue',
+]);
 
 /** Model-name fragments that indicate a premium / top-tier model. Lowercased substring match. */
 const PREMIUM_MODEL_HINTS = ['opus', 'gpt-5', 'gpt5', 'o1', 'o3', 'gpt-4.5', 'gpt-4.1'];
@@ -85,10 +126,13 @@ export function detectAntiPatterns(turns: readonly AnalyzableTurn[]): AntiPatter
   const patterns: AntiPattern[] = [];
   for (const rule of [
     detectVaguePrompts,
+    detectFillerTurns,
     detectRunawayTurns,
     detectMegaContext,
+    detectContextCreep,
     detectPremiumForTrivial,
     detectSessionThrash,
+    detectMarathonSessions,
     detectModelHopping,
   ]) {
     const p = rule(turns);
@@ -115,6 +159,25 @@ function detectVaguePrompts(turns: readonly AnalyzableTurn[]): AntiPattern | und
     detail: `${matches.length} prompts were very short, giving the model little to act on.`,
     suggestion:
       'State the goal, the files involved, expected output, and constraints. A few specific sentences beat a terse one-liner and cut back-and-forth.',
+    examples: exampleTexts(matches),
+  };
+}
+
+/** Filler-only turns: acknowledgements with no actionable ask, each still a billed turn. */
+function detectFillerTurns(turns: readonly AnalyzableTurn[]): AntiPattern | undefined {
+  const matches = turns.filter((t) => isFiller(t.text));
+  if (matches.length < MIN_REPORTABLE) {
+    return undefined;
+  }
+  return {
+    id: 'filler-turn',
+    title: 'Filler-only turns',
+    category: 'Prompt quality',
+    severity: 'info',
+    count: matches.length,
+    detail: `${matches.length} turns were acknowledgements ("thanks", "ok", "continue") with no real ask.`,
+    suggestion:
+      'Each turn re-sends the whole context and is billed. Skip standalone "ok/thanks" replies, and fold "continue" into the next real instruction.',
     examples: exampleTexts(matches),
   };
 }
@@ -155,6 +218,42 @@ function detectMegaContext(turns: readonly AnalyzableTurn[]): AntiPattern | unde
     suggestion:
       'Attach only the files and selections that matter, and start a fresh chat for a new task. Smaller context is cheaper, faster, and usually more accurate.',
     examples: exampleTexts(matches),
+  };
+}
+
+/** Sessions where input grows turn-over-turn instead of resetting — context never gets cleared. */
+function detectContextCreep(turns: readonly AnalyzableTurn[]): AntiPattern | undefined {
+  const bySession = groupBy(turns, (t) => t.sessionId);
+  let creepingSessions = 0;
+  const examples: string[] = [];
+  for (const sessionTurns of bySession.values()) {
+    if (sessionTurns.length < CREEP_MIN_TURNS) {
+      continue;
+    }
+    const ordered = [...sessionTurns].sort((a, b) => a.ts - b.ts);
+    const first = ordered[0].inputTokens;
+    const last = ordered[ordered.length - 1].inputTokens;
+    if (first > 0 && last >= first * CREEP_GROWTH && last - first >= CREEP_MIN_DELTA) {
+      creepingSessions++;
+      const snippet = snippetOf(ordered[ordered.length - 1]?.text);
+      if (snippet && examples.length < MAX_EXAMPLES) {
+        examples.push(snippet);
+      }
+    }
+  }
+  if (creepingSessions === 0) {
+    return undefined;
+  }
+  return {
+    id: 'context-creep',
+    title: 'Context creep within a session',
+    category: 'Context management',
+    severity: 'warn',
+    count: creepingSessions,
+    detail: `${creepingSessions} sessions saw input tokens balloon turn-over-turn (${CREEP_GROWTH}x+).`,
+    suggestion:
+      'When a chat gets long, history and attachments pile onto every turn. Start a fresh chat once you switch tasks to reset the context and cost.',
+    examples,
   };
 }
 
@@ -225,6 +324,50 @@ function detectSessionThrash(turns: readonly AnalyzableTurn[]): AntiPattern | un
   };
 }
 
+/** Marathon sessions: very long-lived chats that keep dragging the whole history along. */
+function detectMarathonSessions(turns: readonly AnalyzableTurn[]): AntiPattern | undefined {
+  const bySession = groupBy(turns, (t) => t.sessionId);
+  let marathons = 0;
+  const examples: string[] = [];
+  for (const sessionTurns of bySession.values()) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const t of sessionTurns) {
+      if (t.ts < min) {
+        min = t.ts;
+      }
+      if (t.ts > max) {
+        max = t.ts;
+      }
+    }
+    const span = max - min;
+    if (sessionTurns.length >= MARATHON_TURNS || span >= MARATHON_SPAN_MS) {
+      marathons++;
+      const ordered = [...sessionTurns].sort((a, b) => a.ts - b.ts);
+      const snippet = snippetOf(ordered[0]?.text);
+      if (snippet && examples.length < MAX_EXAMPLES) {
+        examples.push(snippet);
+      }
+    }
+  }
+  if (marathons === 0) {
+    return undefined;
+  }
+  return {
+    id: 'marathon-session',
+    title: 'Marathon sessions',
+    category: 'Session hygiene',
+    severity: 'warn',
+    count: marathons,
+    detail: `${marathons} sessions ran ${MARATHON_TURNS}+ turns or over ${Math.round(
+      MARATHON_SPAN_MS / 3_600_000,
+    )}h without a fresh chat.`,
+    suggestion:
+      'Long chats re-send a growing history on every turn and drift off-task. Start a new chat per task or sub-task to keep context tight and answers sharp.',
+    examples,
+  };
+}
+
 /** Many distinct models within a single session. */
 function detectModelHopping(turns: readonly AnalyzableTurn[]): AntiPattern | undefined {
   const bySession = groupBy(turns, (t) => t.sessionId);
@@ -260,13 +403,22 @@ function detectModelHopping(turns: readonly AnalyzableTurn[]): AntiPattern | und
 
 function isVague(text: string): boolean {
   const trimmed = text.trim();
-  if (!trimmed || trimmed === '(prompt text unavailable)') {
+  if (!trimmed || trimmed === '(prompt text unavailable)' || isFiller(trimmed)) {
     return false;
   }
   if (trimmed.length <= VAGUE_MAX_CHARS) {
     return true;
   }
   return trimmed.split(/\s+/).length <= 3;
+}
+
+/** A turn whose entire text is an acknowledgement with no actionable request. */
+function isFiller(text: string): boolean {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?,\s]+$/g, '');
+  return FILLER_PHRASES.has(normalized);
 }
 
 function isShort(text: string): boolean {

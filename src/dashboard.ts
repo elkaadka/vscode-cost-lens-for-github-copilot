@@ -41,6 +41,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'copilotControlPlane.dashboard';
 
   private view?: vscode.WebviewView;
+  /** Optional full-screen editor-area mirror of the dashboard (opened from the status bar). */
+  private panel?: vscode.WebviewPanel;
   private workspace: ScopePayload | null = null;
   private session: ScopePayload | null = null;
   private setup: SetupPayload | null = null;
@@ -57,7 +59,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     this.view = view;
     view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     view.webview.html = this.html(view.webview);
-    view.webview.onDidReceiveMessage((msg: { type?: string; id?: string }) => this.onMessage(msg));
+    view.webview.onDidReceiveMessage((msg: { type?: string; id?: string }) =>
+      this.onMessage(msg, view.webview),
+    );
     view.onDidChangeVisibility(() => {
       if (view.visible) {
         this.post();
@@ -65,6 +69,40 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
       }
     });
     this.post();
+  }
+
+  /**
+   * Open (or reveal) the dashboard as a full-screen webview panel in the editor area. Unlike the
+   * sidebar view, this fills the whole editor group with no activity-bar menu. Reuses the exact
+   * same HTML, script, state and message handling as the sidebar view.
+   */
+  openPanel(): void {
+    if (this.panel) {
+      this.panel.reveal(vscode.ViewColumn.Active);
+      this.post();
+      void vscode.commands.executeCommand('copilotControlPlane.refresh');
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      'copilotControlPlane.dashboardPanel',
+      'Cost Lens for GitHub Copilot',
+      vscode.ViewColumn.Active,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [this.extensionUri],
+      },
+    );
+    this.panel = panel;
+    panel.webview.html = this.html(panel.webview);
+    panel.webview.onDidReceiveMessage((msg: { type?: string; id?: string }) =>
+      this.onMessage(msg, panel.webview),
+    );
+    panel.onDidDispose(() => {
+      this.panel = undefined;
+    });
+    this.post();
+    void vscode.commands.executeCommand('copilotControlPlane.refresh');
   }
 
   setCapability(full: boolean, setup: SetupPayload | null, globalOnly = false): void {
@@ -80,7 +118,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     this.post();
   }
 
-  private async onMessage(msg: { type?: string; id?: string }): Promise<void> {
+  private async onMessage(msg: { type?: string; id?: string }, webview: vscode.Webview): Promise<void> {
     switch (msg?.type) {
       case 'refresh':
         void vscode.commands.executeCommand('copilotControlPlane.refresh');
@@ -93,7 +131,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         return;
       case 'scanGlobal': {
         const totals = await this.onScanGlobal();
-        this.view?.webview.postMessage({ type: 'global', global: this.globalPayload(totals) });
+        webview.postMessage({ type: 'global', global: this.globalPayload(totals) });
         return;
       }
       case 'promptDetail': {
@@ -101,7 +139,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
           return;
         }
         const detail = await this.onPromptDetail(msg.id);
-        this.view?.webview.postMessage({ type: 'promptDetail', id: msg.id, detail });
+        webview.postMessage({ type: 'promptDetail', id: msg.id, detail });
         return;
       }
       case 'ready':
@@ -117,6 +155,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
       totalCreditsFmt: fmtCredits(t.totalCredits),
       totalTokensFmt: fmtTokens(t.totalTokens),
       projectCount: t.workspaces.length,
+      spendChart: t.spendChart ?? null,
       rows: t.workspaces.map((w) => ({
         name: w.name ?? w.hash.slice(0, 12),
         isHash: !w.name,
@@ -130,7 +169,14 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
   }
 
   private post(): void {
-    if (!this.view) {
+    const targets: vscode.Webview[] = [];
+    if (this.view) {
+      targets.push(this.view.webview);
+    }
+    if (this.panel) {
+      targets.push(this.panel.webview);
+    }
+    if (targets.length === 0) {
       return;
     }
     // The readable logs live wherever the VS Code server runs, so the Global tab only ever sees
@@ -142,7 +188,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         : !vscode.env.remoteName
           ? 'Local view: work done inside dev containers or WSL2 instances is recorded separately and not shown here.'
           : null;
-    this.view.webview.postMessage({
+    const message = {
       type: 'state',
       full: this.full,
       setup: this.setup,
@@ -150,7 +196,10 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
       envNote,
       workspace: this.workspace,
       session: this.session,
-    });
+    };
+    for (const w of targets) {
+      void w.postMessage(message);
+    }
   }
 
   private html(webview: vscode.Webview): string {
@@ -334,6 +383,19 @@ function DASHBOARD_HTML(csp: string, nonce: string): string {
   .apcard .apex { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
   .apcard .apchip { font-size: 10px; color: var(--fg-dim); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  .opt-hero { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, var(--card)), var(--card)); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 6px; position: relative; overflow: hidden; }
+  .opt-hero .label { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-dim); font-weight: 700; }
+  .opt-hero .opt-sub { font-size: 13px; margin-top: 6px; line-height: 1.5; max-width: 640px; }
+  .opt-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
+  .opt-chip { background: var(--card-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 11.5px; color: var(--fg-dim); }
+  .opt-chip b { font-size: 13px; color: var(--fg); margin-right: 2px; }
+  .opt-h { font-size: 14px; font-weight: 800; margin: 20px 0 4px; }
+  .opt-lead { font-size: 11.5px; color: var(--fg-dim); margin-bottom: 8px; }
+  .opt-none { font-size: 12px; color: var(--fg-dim); background: var(--card-2); border: 1px dashed var(--line); border-radius: 9px; padding: 12px 14px; }
+  .primer { background: var(--card-2); border-radius: 9px; padding: 10px 13px; margin: 7px 0; border-left: 3px solid color-mix(in srgb, var(--accent) 55%, var(--line)); }
+  .primer-t { font-size: 12.5px; font-weight: 700; }
+  .primer-d { font-size: 11.5px; color: var(--fg-dim); margin-top: 4px; line-height: 1.5; }
+
   .overlay { display: none; position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.55); }
   .overlay.show { display: block; }
   .overlay-card { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
@@ -415,10 +477,12 @@ function DASHBOARD_HTML(csp: string, nonce: string): string {
       <div class="tab" data-tab="g">Global</div>
       <div class="tab active" data-tab="w">Workspace</div>
       <div class="tab" data-tab="s">Session</div>
+      <div class="tab" data-tab="o">Optimize</div>
     </div>
     <div class="page" id="page-w"></div>
     <div class="page hidden" id="page-s"></div>
     <div class="page hidden" id="page-g"></div>
+    <div class="page hidden" id="page-o"></div>
   </div>
 
   <div id="overlay" class="overlay">
@@ -519,32 +583,85 @@ const DASHBOARD_JS = String.raw`
   }
 
   function apColor(sev) { return sev === 'bad' ? 'var(--bad)' : sev === 'warn' ? 'var(--warn, #d9a400)' : 'var(--accent)'; }
-  function antipatternsDrill(report, openByDefault) {
-    if (!report || !report.patterns || !report.patterns.length) return null;
-    var n = report.patterns.length;
-    var desc = n + ' issue' + (n === 1 ? '' : 's') + ' \u00B7 across ' + report.analyzed + ' prompt' + (report.analyzed === 1 ? '' : 's');
-    return drill('\uD83E\uDDED', 'Anti-patterns', desc, openByDefault, function (panel) {
-      panel.appendChild(secEl('How you use Copilot \u00B7 detected habits and how to improve'));
-      report.patterns.forEach(function (a) {
-        var card = el('div', 'apcard');
-        card.style.borderLeft = '3px solid ' + apColor(a.severity);
-        var head = el('div', 'aphead');
-        var dot = el('span', 'apdot'); dot.style.background = apColor(a.severity);
-        head.appendChild(dot);
-        head.appendChild(el('span', 'aptitle', a.title));
-        head.appendChild(el('span', 'apcat', a.category));
-        var badge = el('span', 'apcount', String(a.count)); head.appendChild(badge);
-        card.appendChild(head);
-        card.appendChild(el('div', 'apdetail', a.detail));
-        var sug = el('div', 'apsug'); sug.appendChild(el('b', null, 'Try: ')); sug.appendChild(document.createTextNode(a.suggestion)); card.appendChild(sug);
-        if (a.examples && a.examples.length) {
-          var ex = el('div', 'apex');
-          a.examples.forEach(function (e) { ex.appendChild(el('span', 'apchip', e)); });
-          card.appendChild(ex);
-        }
-        panel.appendChild(card);
-      });
+  function apCard(a) {
+    var card = el('div', 'apcard');
+    card.style.borderLeft = '3px solid ' + apColor(a.severity);
+    var head = el('div', 'aphead');
+    var dot = el('span', 'apdot'); dot.style.background = apColor(a.severity);
+    head.appendChild(dot);
+    head.appendChild(el('span', 'aptitle', a.title));
+    head.appendChild(el('span', 'apcat', a.category));
+    head.appendChild(el('span', 'apcount', String(a.count)));
+    card.appendChild(head);
+    card.appendChild(el('div', 'apdetail', a.detail));
+    var sug = el('div', 'apsug'); sug.appendChild(el('b', null, 'Try: ')); sug.appendChild(document.createTextNode(a.suggestion)); card.appendChild(sug);
+    if (a.examples && a.examples.length) {
+      var ex = el('div', 'apex');
+      a.examples.forEach(function (e) { ex.appendChild(el('span', 'apchip', e)); });
+      card.appendChild(ex);
+    }
+    return card;
+  }
+  function optimizeChip(n, label) {
+    var c = el('div', 'opt-chip');
+    c.appendChild(el('b', null, String(n)));
+    c.appendChild(document.createTextNode(' ' + label + (n === 1 ? '' : 's')));
+    return c;
+  }
+  function renderOptimize() {
+    var page = document.getElementById('page-o');
+    page.textContent = '';
+    var ws = state.workspace, sess = state.session;
+    var tips = sess && sess.measured && sess.measured.tips ? sess.measured.tips : [];
+    var report = ws && ws.antiPatterns ? ws.antiPatterns : (sess && sess.antiPatterns ? sess.antiPatterns : null);
+    var patterns = report && report.patterns ? report.patterns : [];
+
+    var hero = el('div', 'opt-hero');
+    hero.appendChild(el('div', 'label', 'Optimize Copilot'));
+    var sub = 'Cut cost, spot habits, and learn how to get more from every prompt.';
+    if (report) sub += ' Based on ' + report.analyzed + ' prompt' + (report.analyzed === 1 ? '' : 's') + ' from your logs.';
+    hero.appendChild(el('div', 'opt-sub', sub));
+    var chips = el('div', 'opt-chips');
+    chips.appendChild(optimizeChip(tips.length, 'cost tip'));
+    chips.appendChild(optimizeChip(patterns.length, 'habit'));
+    hero.appendChild(chips);
+    page.appendChild(hero);
+
+    page.appendChild(el('div', 'opt-h', '\uD83D\uDCB0 Cut cost'));
+    if (tips.length) {
+      page.appendChild(el('div', 'opt-lead', 'Concrete, measured savings from the active session.'));
+      tips.forEach(function (t) { page.appendChild(tipCard(t)); });
+    } else {
+      page.appendChild(el('div', 'opt-none', 'No cost-saving opportunities detected in the active session \u2014 nice and lean.'));
+    }
+
+    page.appendChild(el('div', 'opt-h', '\uD83E\uDDED Your habits'));
+    if (patterns.length) {
+      page.appendChild(el('div', 'opt-lead', 'Recurring patterns in how you prompt, worst first \u2014 each with a fix.'));
+      patterns.forEach(function (a) { page.appendChild(apCard(a)); });
+    } else {
+      page.appendChild(el('div', 'opt-none', 'No anti-patterns detected across your prompts yet.'));
+    }
+
+    page.appendChild(el('div', 'opt-h', '\uD83D\uDCA1 How to do better'));
+    page.appendChild(el('div', 'opt-lead', 'A short playbook for getting more from Copilot at lower cost.'));
+    var primer = [
+      ['Be specific', 'State the goal, the files involved, the expected output, and any constraints. A few precise sentences beat a vague one-liner and cut back-and-forth.'],
+      ['Keep context tight', 'Attach only the files and selections that matter, and start a fresh chat when you switch tasks. Smaller context is cheaper, faster, and more accurate.'],
+      ['Right-size the model', 'Use a top-tier model for hard reasoning; route quick edits, renames, and lookups to a cheaper model to save credits with no quality loss.'],
+      ['Mind reasoning effort', 'High or extra-high reasoning earns its cost on genuinely complex tasks. Drop back to standard once you are past the hard part.'],
+      ['Prune your tools', 'Every enabled tool or MCP server adds its schema to the prompt on every turn, even when unused. Turn off what you do not need.'],
+      ['Let the agent finish', 'Avoid rapid-fire corrections. Give one fuller instruction with acceptance criteria instead of nudging repeatedly.'],
+      ['Use an instructions file', 'A copilot-instructions file encodes durable conventions so you do not repeat them every chat, keeping replies on-style and shorter.'],
+    ];
+    primer.forEach(function (p) {
+      var it = el('div', 'primer');
+      it.appendChild(el('div', 'primer-t', p[0]));
+      it.appendChild(el('div', 'primer-d', p[1]));
+      page.appendChild(it);
     });
+
+    page.appendChild(footer());
   }
 
   function openPromptDetail(id) {
@@ -709,22 +826,6 @@ const DASHBOARD_JS = String.raw`
     if (tip.metric) c.appendChild(el('div', 'a-m', tip.metric));
     return c;
   }
-  function tipsDrill(tips) {
-    var open = drillOpen.hasOwnProperty('Ways to save') ? drillOpen['Ways to save'] : false;
-    var d = el('div', 'drill tip tips-span' + (open ? ' open' : ''));
-    var head = el('div', 'drill-head');
-    head.appendChild(el('div', 'drill-ico', '\uD83D\uDCA1'));
-    var body = el('div', 'drill-body');
-    body.appendChild(el('div', 'drill-t', 'Ways to save'));
-    body.appendChild(el('div', 'drill-d', tips.length + ' recommendation' + (tips.length === 1 ? '' : 's') + ' to optimize cost'));
-    head.appendChild(body);
-    head.appendChild(el('div', 'drill-chev', '\u203A'));
-    head.addEventListener('click', function () { d.classList.toggle('open'); drillOpen['Ways to save'] = d.classList.contains('open'); });
-    var panel = el('div', 'drill-panel');
-    tips.forEach(function (tip) { panel.appendChild(tipCard(tip)); });
-    d.appendChild(head); d.appendChild(panel);
-    return d;
-  }
 
   // ----- WORKSPACE -----
   function renderWorkspace(p) {
@@ -750,7 +851,6 @@ const DASHBOARD_JS = String.raw`
 
     var drills = el('div', 'drills');
     var pr = promptsDrill(p.prompts, false); if (pr) drills.appendChild(pr);
-    var ap = antipatternsDrill(p.antiPatterns, false); if (ap) drills.appendChild(ap);
     var c = cacheDrill(p.cache, false); if (c) drills.appendChild(c);
     var t = toolsDrill(p.tools, false); if (t) drills.appendChild(t);
     drills.appendChild(faqDrill());
@@ -768,8 +868,6 @@ const DASHBOARD_JS = String.raw`
     var onSpend = m.spendChart && m.spendChart.hasData ? function () { openSpendChart(m); } : null;
     grid.appendChild(heroCell('Active session', m.costFmt, '\u201C' + title + '\u201D \u00B7 ' + m.creditsFmt + ' credits \u00B7 ' + m.totalTokensFmt + ' tokens', onSpend));
 
-    if (m.tips && m.tips.length) grid.appendChild(tipsDrill(m.tips));
-
     grid.appendChild(donutCell('Token distribution', m.tokenMix, m.totalTokensFmt, ''));
     grid.appendChild(donutCell('Cost distribution', m.costMix, m.costFmt, ''));
     var hit = p.cache && p.cache.sessions && p.cache.sessions.length ? p.cache.sessions[0].hitRateFmt : '\u2014';
@@ -782,7 +880,6 @@ const DASHBOARD_JS = String.raw`
 
     var drills = el('div', 'drills');
     var pr = promptsDrill(p.prompts, false); if (pr) drills.appendChild(pr);
-    var ap = antipatternsDrill(p.antiPatterns, false); if (ap) drills.appendChild(ap);
     var c = cacheDrill(p.cache, false); if (c) drills.appendChild(c);
     var t = toolsDrill(p.tools, false); if (t) drills.appendChild(t);
     drills.appendChild(faqDrill());
@@ -801,7 +898,8 @@ const DASHBOARD_JS = String.raw`
       return;
     }
     var grid = el('div', 'grid');
-    grid.appendChild(heroCell('All workspaces', g.totalCostFmt, g.totalCreditsFmt + ' credits \u00B7 ' + g.totalTokensFmt + ' tokens \u00B7 ' + g.projectCount + ' projects'));
+    var onSpend = g.spendChart && g.spendChart.hasData ? function () { openSpendChart(g); } : null;
+    grid.appendChild(heroCell('All workspaces', g.totalCostFmt, g.totalCreditsFmt + ' credits \u00B7 ' + g.totalTokensFmt + ' tokens \u00B7 ' + g.projectCount + ' projects', onSpend));
     grid.appendChild(statCell('Projects', String(g.projectCount), 'with usage'));
     grid.appendChild(statCell('Total tokens', g.totalTokensFmt, 'all projects'));
     var cell = el('div', 'cell wide');
@@ -1004,7 +1102,7 @@ const DASHBOARD_JS = String.raw`
 
   function setTab(t) {
     activeTab = t;
-    ['w', 's', 'g'].forEach(function (id) { document.getElementById('page-' + id).classList.toggle('hidden', id !== t); });
+    ['w', 's', 'g', 'o'].forEach(function (id) { document.getElementById('page-' + id).classList.toggle('hidden', id !== t); });
     document.querySelectorAll('.tab').forEach(function (el) { el.classList.toggle('active', el.getAttribute('data-tab') === t); });
     if (t === 'g' && !state.global) renderGlobal(null);
   }
@@ -1044,6 +1142,7 @@ const DASHBOARD_JS = String.raw`
       renderWorkspace(state.workspace);
       renderSession(state.session);
     }
+    renderOptimize();
     renderGlobal(state.global);
   }
 

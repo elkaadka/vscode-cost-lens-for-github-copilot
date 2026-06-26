@@ -29,7 +29,7 @@ A live badge in the status bar showing your measured Copilot credit usage for th
 workspace, updated as you chat. It's your at‑a‑glance running total, so you don't have to open the
 dashboard to know where you stand. Hover it for a
 breakdown of the number: total tokens, sessions, cost, requests, AI Units, and the model in use.
-Click it to jump straight to the full dashboard.
+Click it to open the full dashboard as a full-screen panel in the editor.
 
 <p align="center">
   <img src="media/screenshots/badge.png" alt="Status-bar badge showing measured Copilot credit usage" width="320" />
@@ -37,23 +37,30 @@ Click it to jump straight to the full dashboard.
 </p>
 
 ### The dashboard
-A dedicated activity‑bar view with three scope tabs:
+A dedicated activity‑bar view (also openable full‑screen from the status‑bar badge) with four scope
+tabs:
 
 | Scope | What it shows |
 | --- | --- |
 | **Global** | Totals across every workspace on this machine, with a per‑project breakdown. |
 | **Workspace** | Totals across every chat session in the current project. |
-| **Session** | The active chat only, plus ranked cost‑saving tips. |
+| **Session** | The active chat only. |
+| **Optimize** | Cost‑cutting tips, your detected prompting habits worst‑first, and a “how to do better” playbook. |
 
-Each tab is a compact **bento grid** (headline spend, where your tokens go, where your *cost* goes,
-cache hit rate, reasoning effort, average spend per prompt, top models, and a 7‑day chart) with
+Each scope tab is a compact **bento grid** (headline spend, where your tokens go, where your *cost*
+goes, cache hit rate, reasoning effort, average spend per prompt, top models, and a 7‑day chart) with
 collapsible drill‑downs:
 
+- **Spend over time**: click the headline spend on any tab for an accumulated‑cost / forecast chart.
 - **Priciest prompts**: your prompts ranked most‑expensive first; click any one for full detail.
 - **Cache**: what's in the cached prefix re‑sent every turn (history + tool schemas + system
   prompt), the hit rate, and what the cache saved you.
 - **Tools**: which available tools were actually used vs. sitting idle in every request's schema.
 - **FAQ**: exactly how each number is derived.
+
+The **Global** tab labels each project by name — read from `workspace.json`, or derived from the
+file paths in the chat logs when it's absent (dev containers, remotes, Codespaces) — instead of an
+opaque storage hash.
 
 <p align="center">
   <img src="media/screenshots/workspace.png" alt="Workspace tab: headline spend, token and cost donuts, cache, reasoning and top models" width="320" />
@@ -83,20 +90,26 @@ Click any prompt for a detail view with everything the logs hold for that turn:
   <img src="media/screenshots/expensive_prompts.png" alt="Priciest prompts ranked by real billed credits" width="320" />
 </p>
 
-### Cost‑saving tips
-The Session tab surfaces ranked, data‑backed tips when there's waste to trim (and a calm "no actions"
-state when there isn't):
+### Optimize tab
+A dedicated **Optimize** tab pulls every “spend less” signal into one place:
 
-- **Long chat history** re‑sent on every turn → start a fresh chat.
-- **Idle tool schemas** riding along in every request → turn off unused tools / MCP servers.
-- **Still on high reasoning**: a time‑based nudge that escalates the longer high/x‑high reasoning
-  stays selected (the failure mode is forgetting to switch back, not any single call).
-- **Pricey model on light work**: a top/mid price‑tier model whose replies are consistently small.
-- **Switch to a cheaper model**: an estimate of what you'd save by moving to the cheapest model one
-  tier down, anchored to your real billed spend.
+- **Cut cost**: ranked, data‑backed tips when there's waste to trim (and a calm “no actions” state
+  when there isn't):
+  - **Long chat history** re‑sent on every turn → start a fresh chat.
+  - **Idle tool schemas** riding along in every request → turn off unused tools / MCP servers.
+  - **Still on high reasoning**: a time‑based nudge that escalates the longer high/x‑high reasoning
+    stays selected (the failure mode is forgetting to switch back, not any single call).
+  - **Pricey model on light work**: a top/mid price‑tier model whose replies are consistently small.
+  - **Switch to a cheaper model**: an estimate of what you'd save by moving to the cheapest model one
+    tier down, anchored to your real billed spend.
+- **Your habits**: anti‑patterns detected from Copilot's own logs, worst‑first — vague one‑line
+  prompts, filler‑only turns, runaway agent loops, oversized context, context creep, premium models
+  on trivial prompts, rapid re‑prompting, marathon sessions, and mid‑session model hopping — each with
+  a concrete fix.
+- **How to do better**: a short playbook of Copilot best practices.
 
 <p align="center">
-  <img src="media/screenshots/session.png" alt="Session tab with ranked cost-saving tips including a cheaper-model suggestion" width="320" />
+  <img src="media/screenshots/session.png" alt="Cost-saving tips including a cheaper-model suggestion" width="320" />
 </p>
 
 ## How it measures
@@ -163,7 +176,7 @@ npm run package:vsix
 
 | Command | Purpose |
 | --- | --- |
-| **Cost Lens for GitHub Copilot: Show Cost Details** | Focus the dashboard |
+| **Cost Lens for GitHub Copilot: Show Cost Details** | Open the dashboard full-screen |
 | **Cost Lens for GitHub Copilot: Refresh** | Re‑scan logs and recompute |
 | **Cost Lens for GitHub Copilot: Enable Copilot Token Logging** | Turn on the logs needed to measure cost |
 | **Cost Lens for GitHub Copilot: Reset Session Meter** | Clear the current session's running meter |

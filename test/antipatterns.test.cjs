@@ -73,6 +73,16 @@ async function main() {
   const oneVague = detectAntiPatterns([turn({ text: 'go' }), turn({ index: 1 })]);
   check('single vague prompt not reported', !find(oneVague, 'vague-prompt'));
 
+  // Filler-only turns are flagged separately and excluded from "vague".
+  const filler = detectAntiPatterns([
+    turn({ index: 0, text: 'thanks' }),
+    turn({ index: 1, text: 'ok!' }),
+    turn({ index: 2, text: 'Refactor the parser to stream input instead of buffering it all.' }),
+  ]);
+  const fl = find(filler, 'filler-turn');
+  check('detects filler-only turns', !!fl && fl.count === 2, fl ? String(fl.count) : 'missing');
+  check('filler turns are not double-counted as vague', !find(filler, 'vague-prompt'));
+
   // Runaway agent loop: a single big turn is enough; doubles severity past 2x.
   const runaway = detectAntiPatterns([turn({ calls: 60 })]);
   const rw = find(runaway, 'runaway-agent-turn');
@@ -123,6 +133,33 @@ async function main() {
     turn({ index: 2, models: ['gemini-2.5'] }),
   ]);
   check('detects model hopping', !!find(hop, 'model-hopping'));
+
+  // Marathon session: a chat spanning more than 3 hours.
+  const marathon = detectAntiPatterns([
+    turn({ index: 0, ts: 0 }),
+    turn({ index: 1, ts: 4 * 60 * 60_000 }),
+  ]);
+  check('detects marathon session by span', !!find(marathon, 'marathon-session'));
+
+  // Context creep: input tokens balloon turn-over-turn within a session.
+  const creep = detectAntiPatterns([
+    turn({ index: 0, ts: 0, inputTokens: 5_000 }),
+    turn({ index: 1, ts: 60_000, inputTokens: 20_000 }),
+    turn({ index: 2, ts: 120_000, inputTokens: 60_000 }),
+    turn({ index: 3, ts: 180_000, inputTokens: 90_000 }),
+    turn({ index: 4, ts: 240_000, inputTokens: 150_000 }),
+  ]);
+  check('detects context creep', !!find(creep, 'context-creep'));
+
+  // Stable context across a session is not creep.
+  const stable = detectAntiPatterns([
+    turn({ index: 0, ts: 0, inputTokens: 8_000 }),
+    turn({ index: 1, ts: 60_000, inputTokens: 9_000 }),
+    turn({ index: 2, ts: 120_000, inputTokens: 8_500 }),
+    turn({ index: 3, ts: 180_000, inputTokens: 9_200 }),
+    turn({ index: 4, ts: 240_000, inputTokens: 8_800 }),
+  ]);
+  check('stable context not flagged as creep', !find(stable, 'context-creep'));
 
   // Sorting: bad severity comes before info.
   const mixed = detectAntiPatterns([
