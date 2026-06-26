@@ -1,4 +1,5 @@
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
+import type { Dirent } from 'node:fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { parseSpanLine } from './usagelog';
@@ -76,7 +77,7 @@ async function scanWorkspace(hashDir: string): Promise<{ credits: number; tokens
   let sessionDirs: string[];
   try {
     const entries = await fsp.readdir(debugLogs, { withFileTypes: true });
-    sessionDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    sessionDirs = entries.filter((e: Dirent) => e.isDirectory()).map((e: Dirent) => e.name);
   } catch {
     return { credits: 0, tokens: 0, sessions: 0 };
   }
@@ -119,7 +120,7 @@ export async function scanGlobalTotals(base: string): Promise<GlobalTotals> {
   let hashes: string[] = [];
   try {
     const entries = await fsp.readdir(base, { withFileTypes: true });
-    hashes = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    hashes = entries.filter((e: Dirent) => e.isDirectory()).map((e: Dirent) => e.name);
   } catch {
     return { totalCredits: 0, totalTokens: 0, workspaces: [], scanned: 0, scannedAt: Date.now() };
   }

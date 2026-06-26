@@ -1,5 +1,6 @@
-import * as vscode from 'vscode';
-import { GlobalTotals, scanGlobalTotals, workspaceStorageBase } from './global';
+import type * as vscode from 'vscode';
+import { makeNonce, buildCsp } from './webview';
+import { type GlobalTotals, scanGlobalTotals, workspaceStorageBase } from './global';
 
 const CREDIT_USD = 0.01;
 
@@ -116,11 +117,7 @@ export class GlobalViewProvider implements vscode.WebviewViewProvider {
 
   private html(webview: vscode.Webview): string {
     const nonce = makeNonce();
-    const csp = [
-      `default-src 'none'`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src 'nonce-${nonce}'`,
-    ].join('; ');
+    const csp = buildCsp(webview, nonce);
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -244,13 +241,4 @@ export class GlobalViewProvider implements vscode.WebviewViewProvider {
 </body>
 </html>`;
   }
-}
-
-function makeNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let out = '';
-  for (let i = 0; i < 32; i++) {
-    out += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return out;
 }

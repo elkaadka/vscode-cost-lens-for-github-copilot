@@ -129,14 +129,19 @@
     "watch": "node esbuild.js --watch",
     "package": "node esbuild.js --production",
     "package:vsix": "vsce package --no-dependencies --readme-path MARKETPLACE.md",
-    "check-types": "tsc --noEmit -p tsconfig.json"
+    "lint": "eslint src",
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "test": "node test/usagelog.realdata.test.cjs"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.120.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.21.5",
-    "typescript": "^5.4.5"
+    "eslint": "^9.39.4",
+    "typescript": "^5.4.5",
+    "typescript-eslint": "^8.62.0"
   },
   "dependencies": {
     "gpt-tokenizer": "^3.4.0"

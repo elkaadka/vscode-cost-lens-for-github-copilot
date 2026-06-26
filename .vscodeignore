@@ -4,8 +4,10 @@ docs/**
 test/**
 mockups/**
 .devcontainer/**
+.github/**
 node_modules/**
 esbuild.js
+eslint.config.mjs
 tsconfig.json
 package-lock.json
 **/*.map

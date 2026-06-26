@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
-import { MeasuredView } from './panel';
-import { CacheMeasured } from './cache';
-import { ToolsMeasured } from './tools';
-import { PromptDetailView, TopPromptsMeasured } from './prompts';
-import { GlobalTotals } from './global';
+import { makeNonce, buildCsp } from './webview';
+import { type MeasuredView } from './panel';
+import { type CacheMeasured } from './cache';
+import { type ToolsMeasured } from './tools';
+import { type PromptDetailView, type TopPromptsMeasured } from './prompts';
+import { type GlobalTotals } from './global';
 
 const CREDIT_USD = 0.01;
 
@@ -151,11 +152,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
 
   private html(webview: vscode.Webview): string {
     const nonce = makeNonce();
-    const csp = [
-      `default-src 'none'`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src 'nonce-${nonce}'`,
-    ].join('; ');
+    const csp = buildCsp(webview, nonce);
     return DASHBOARD_HTML(csp, nonce);
   }
 }
@@ -172,16 +169,6 @@ function fmtUSD(n: number): string {
   return n < 0.01 && n > 0 ? '<$0.01' : `$${n.toFixed(2)}`;
 }
 
-function makeNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let out = '';
-  for (let i = 0; i < 32; i++) {
-    out += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return out;
-}
-
-/* eslint-disable @typescript-eslint/no-unused-vars */
 function DASHBOARD_HTML(csp: string, nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
