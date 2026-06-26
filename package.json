@@ -131,7 +131,7 @@
     "package:vsix": "vsce package --no-dependencies --readme-path MARKETPLACE.md",
     "lint": "eslint src",
     "check-types": "tsc --noEmit -p tsconfig.json",
-    "test": "node test/usagelog.realdata.test.cjs"
+    "test": "node test/antipatterns.test.cjs && node test/usagelog.realdata.test.cjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

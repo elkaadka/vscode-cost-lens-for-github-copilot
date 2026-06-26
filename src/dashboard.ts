@@ -4,6 +4,7 @@ import { type MeasuredView } from './panel';
 import { type CacheMeasured } from './cache';
 import { type ToolsMeasured } from './tools';
 import { type PromptDetailView, type TopPromptsMeasured } from './prompts';
+import { type AntiPatternReport } from './antipatterns';
 import { type GlobalTotals } from './global';
 
 const CREDIT_USD = 0.01;
@@ -14,6 +15,8 @@ export interface ScopePayload {
   cache: CacheMeasured | null;
   tools: ToolsMeasured | null;
   prompts: TopPromptsMeasured | null;
+  /** Detected Copilot-usage anti-patterns with suggested improvements. */
+  antiPatterns: AntiPatternReport | null;
   /** Session title for the session hero (undefined for workspace). */
   sessionTitle?: string;
 }
@@ -319,6 +322,18 @@ function DASHBOARD_HTML(csp: string, nonce: string): string {
   .prow .pcost b { font-size: 13px; font-weight: 700; }
   .prow .pcost small { display: block; font-size: 9.5px; color: var(--fg-dim); }
 
+  .apcard { background: var(--card-2); border-radius: 9px; padding: 10px 11px; margin: 8px 0; }
+  .apcard .aphead { display: flex; align-items: center; gap: 7px; }
+  .apcard .apdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+  .apcard .aptitle { font-size: 12.5px; font-weight: 700; }
+  .apcard .apcat { font-size: 9.5px; color: var(--fg-dim); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+  .apcard .apcount { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--fg-dim); }
+  .apcard .apdetail { font-size: 11.5px; color: var(--fg-dim); margin-top: 6px; }
+  .apcard .apsug { font-size: 11.5px; margin-top: 6px; line-height: 1.45; }
+  .apcard .apsug b { color: var(--accent); }
+  .apcard .apex { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .apcard .apchip { font-size: 10px; color: var(--fg-dim); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   .overlay { display: none; position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.55); }
   .overlay.show { display: block; }
   .overlay-card { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
@@ -499,6 +514,35 @@ const DASHBOARD_JS = String.raw`
         var cost = el('div', 'pcost'); cost.appendChild(el('b', null, r.costFmt)); cost.appendChild(el('small', null, r.creditsFmt !== '-' ? r.creditsFmt + ' cr' : 'est')); row.appendChild(cost);
         row.addEventListener('click', function () { openPromptDetail(r.id); });
         panel.appendChild(row);
+      });
+    });
+  }
+
+  function apColor(sev) { return sev === 'bad' ? 'var(--bad)' : sev === 'warn' ? 'var(--warn, #d9a400)' : 'var(--accent)'; }
+  function antipatternsDrill(report, openByDefault) {
+    if (!report || !report.patterns || !report.patterns.length) return null;
+    var n = report.patterns.length;
+    var desc = n + ' issue' + (n === 1 ? '' : 's') + ' \u00B7 across ' + report.analyzed + ' prompt' + (report.analyzed === 1 ? '' : 's');
+    return drill('\uD83E\uDDED', 'Anti-patterns', desc, openByDefault, function (panel) {
+      panel.appendChild(secEl('How you use Copilot \u00B7 detected habits and how to improve'));
+      report.patterns.forEach(function (a) {
+        var card = el('div', 'apcard');
+        card.style.borderLeft = '3px solid ' + apColor(a.severity);
+        var head = el('div', 'aphead');
+        var dot = el('span', 'apdot'); dot.style.background = apColor(a.severity);
+        head.appendChild(dot);
+        head.appendChild(el('span', 'aptitle', a.title));
+        head.appendChild(el('span', 'apcat', a.category));
+        var badge = el('span', 'apcount', String(a.count)); head.appendChild(badge);
+        card.appendChild(head);
+        card.appendChild(el('div', 'apdetail', a.detail));
+        var sug = el('div', 'apsug'); sug.appendChild(el('b', null, 'Try: ')); sug.appendChild(document.createTextNode(a.suggestion)); card.appendChild(sug);
+        if (a.examples && a.examples.length) {
+          var ex = el('div', 'apex');
+          a.examples.forEach(function (e) { ex.appendChild(el('span', 'apchip', e)); });
+          card.appendChild(ex);
+        }
+        panel.appendChild(card);
       });
     });
   }
@@ -706,6 +750,7 @@ const DASHBOARD_JS = String.raw`
 
     var drills = el('div', 'drills');
     var pr = promptsDrill(p.prompts, false); if (pr) drills.appendChild(pr);
+    var ap = antipatternsDrill(p.antiPatterns, false); if (ap) drills.appendChild(ap);
     var c = cacheDrill(p.cache, false); if (c) drills.appendChild(c);
     var t = toolsDrill(p.tools, false); if (t) drills.appendChild(t);
     drills.appendChild(faqDrill());
@@ -737,6 +782,7 @@ const DASHBOARD_JS = String.raw`
 
     var drills = el('div', 'drills');
     var pr = promptsDrill(p.prompts, false); if (pr) drills.appendChild(pr);
+    var ap = antipatternsDrill(p.antiPatterns, false); if (ap) drills.appendChild(ap);
     var c = cacheDrill(p.cache, false); if (c) drills.appendChild(c);
     var t = toolsDrill(p.tools, false); if (t) drills.appendChild(t);
     drills.appendChild(faqDrill());

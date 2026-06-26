@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Anti-pattern detection: a new "Anti-patterns" section on the Workspace and Session tabs that
+  analyses how you use Copilot (parsed from its own logs) and suggests concrete improvements.
+  Detectors cover vague one-line prompts, runaway agent loops, oversized context, premium models
+  used for trivial prompts, rapid re-prompting, and mid-session model hopping
+  (`src/antipatterns.ts`, unit-tested in `test/antipatterns.test.cjs`).
 - ESLint (flat config) with the TypeScript-ESLint recommended rules plus type-aware checks
   (`no-floating-promises`, `no-misused-promises`), wired into CI.
 - `npm run lint` and `npm test` scripts; CI now lints, type-checks, compiles, tests, and packages.

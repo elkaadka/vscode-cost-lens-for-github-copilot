@@ -8,6 +8,7 @@ import { DashboardViewProvider, type ScopePayload, type SetupPayload } from './d
 import { scanGlobalTotals, workspaceStorageBase } from './global';
 import { type ToolRow, type ToolsMeasured } from './tools';
 import { type PromptCallRow, type PromptDetailView, type PromptRow, type TopPromptsMeasured } from './prompts';
+import { detectAntiPatterns } from './antipatterns';
 import { chatContextBus, sessionMeter } from './meter';
 import { type Capabilities, detectCapabilities, enableTokenLogging } from './capabilities';
 import {
@@ -199,6 +200,7 @@ async function refreshCapabilities(): Promise<void> {
             cache: buildCache(totals) ?? null,
             tools: buildTools(totals) ?? null,
             prompts: buildTopPrompts(totals) ?? null,
+            antiPatterns: detectAntiPatterns(totals.promptTurns ?? []),
           };
           const sessionTotals = reader.activeSessionTotals;
           const sessScope: ScopePayload = {
@@ -206,6 +208,7 @@ async function refreshCapabilities(): Promise<void> {
             cache: buildCache(sessionTotals) ?? null,
             tools: buildTools(sessionTotals) ?? null,
             prompts: buildTopPrompts(sessionTotals) ?? null,
+            antiPatterns: detectAntiPatterns(sessionTotals.promptTurns ?? []),
           };
           ext.dashboard.setScopes(wsScope, sessScope);
           ext.badge.setMeasured(measured);
