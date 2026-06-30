@@ -2,7 +2,7 @@
   "name": "cost-lens-for-github-copilot",
   "displayName": "Cost Lens for GitHub Copilot",
   "description": "See your real GitHub Copilot spend: AI credits, cost and tokens, measured from Copilot's own logs.",
-  "version": "0.2.0",
+  "version": "0.2.3",
   "publisher": "AdilElKanabi",
   "license": "MIT",
   "icon": "icon.png",
@@ -18,7 +18,7 @@
     "vscode": "^1.120.0"
   },
   "categories": [
-    "Other"
+    "Visualization"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -138,7 +138,7 @@
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.120.0",
     "@vscode/vsce": "^3.0.0",
-    "esbuild": "^0.21.5",
+    "esbuild": "^0.28.1",
     "eslint": "^9.39.4",
     "typescript": "^5.4.5",
     "typescript-eslint": "^8.62.0"
