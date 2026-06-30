@@ -26,9 +26,10 @@ jobs:
         run: npm ci
 
       - name: Build extension
-        run: npm run package
+        run: npm run compile
+
+      - name: Package extension
+        run: npx vsce package
 
       - name: Publish to VS Code Marketplace
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx vsce publish --no-dependencies --readme-path MARKETPLACE.md -p "$VSCE_PAT"
+        run: npx vsce publish --no-dependencies --readme-path MARKETPLACE.md -p ${{ secrets.VSCE_PAT }}
